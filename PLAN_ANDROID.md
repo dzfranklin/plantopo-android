@@ -1,5 +1,18 @@
 # PlanTopo — Android App Plan
 
+## Implementation Status
+
+- [x] **WebView Integration** — Fragment-based WebView with full auth flow
+- [x] **Authentication** — Session token extraction and secure storage (EncryptedSharedPreferences)
+- [x] **JavaScript Bridge** — `Android.startRecording()` interface for web-to-native communication
+- [x] **Navigation** — Fragment navigation between WebView and Recording screens
+- [x] **Build Configuration** — Debug/release variants with appropriate base URLs
+- [ ] **Recording Service** — Foreground service with FusedLocationProviderClient
+- [ ] **Local Storage** — Room database for GPS points and tracks
+- [ ] **Sync** — WorkManager-based sync to backend API
+- [ ] **Permissions** — Location permission handling
+- [ ] **Recording UI** — Native Compose recording screen with controls
+
 ## Purpose
 
 Native Kotlin app for GPS track recording. Planning features are delivered via
