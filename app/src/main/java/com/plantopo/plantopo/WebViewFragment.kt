@@ -22,6 +22,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.plantopo.plantopo.recording.data.db.RecordingDatabase
+import com.plantopo.plantopo.recording.data.model.RecordingWithPoints
 import com.plantopo.plantopo.recording.data.repository.RecordingRepository
 import com.plantopo.plantopo.recording.service.RecordingService
 import com.plantopo.plantopo.recording.sync.RecordingSyncWorker
@@ -29,12 +30,14 @@ import com.plantopo.plantopo.recording.ui.RecordingUiState
 import com.plantopo.plantopo.recording.ui.RecordingViewModel
 import com.plantopo.plantopo.recording.util.PermissionHandler
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import timber.log.Timber
 
 class WebViewFragment : Fragment() {
     private var webView: WebView? = null
     private lateinit var authManager: AuthManager
     private lateinit var oauthManager: OAuthManager
+    private var currentRecordingServiceId: Long? = null
 
     private val recordingViewModel: RecordingViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -65,7 +68,7 @@ class WebViewFragment : Fragment() {
                 "Location permissions are required to record tracks",
                 Toast.LENGTH_LONG
             ).show()
-            pushRecordTrackState(isRecording = false, pointCount = 0)
+            pushRecordTrackState(null)
         }
     }
 
@@ -103,10 +106,8 @@ class WebViewFragment : Fragment() {
         // Observe current recording for live updates
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                recordingViewModel.currentRecording.collect { recording ->
-                    if (recording != null) {
-                        pushRecordTrackState(isRecording = true, pointCount = recording.pointCount)
-                    }
+                recordingViewModel.currentRecordingWithPoints.collect { recordingWithPoints ->
+                    pushRecordTrackState(recordingWithPoints)
                 }
             }
         }
@@ -199,6 +200,15 @@ class WebViewFragment : Fragment() {
                 .attach(this)
                 .commit()
         }
+
+        // Check if there's an active recording and ensure service is running
+        val currentRecording = recordingViewModel.currentRecording.value
+        if (currentRecording != null && currentRecordingServiceId != currentRecording.id) {
+            Timber.i("Found active recording ${currentRecording.id} on resume, restarting service")
+            startRecordingService(currentRecording.id)
+            currentRecordingServiceId = currentRecording.id
+        }
+
         // Note: No need to refresh session on resume - better-auth automatically
         // refreshes the session when it's used, and it has a 1 year expiry
     }
@@ -239,28 +249,26 @@ class WebViewFragment : Fragment() {
 
     private fun onRecordTrackReady() {
         Timber.i("Record track ready callback from web")
-        val recording = recordingViewModel.currentRecording.value
-        pushRecordTrackState(
-            isRecording = recording != null,
-            pointCount = recording?.pointCount ?: 0
-        )
+        val recordingWithPoints = recordingViewModel.currentRecordingWithPoints.value
+        pushRecordTrackState(recordingWithPoints)
     }
 
     private fun handleRecordingState(state: RecordingUiState) {
         when (state) {
             is RecordingUiState.Idle -> {
-                pushRecordTrackState(isRecording = false, pointCount = 0)
+                pushRecordTrackState(null)
             }
             is RecordingUiState.Starting -> {
                 Timber.d("Recording starting...")
             }
             is RecordingUiState.Active -> {
                 Timber.d("Recording started: ${state.recording.id}")
-                startRecordingService(state.recording.id)
-                pushRecordTrackState(
-                    isRecording = true,
-                    pointCount = state.recording.pointCount
-                )
+                // Only start service if not already started for this recording
+                if (currentRecordingServiceId != state.recording.id) {
+                    startRecordingService(state.recording.id)
+                    currentRecordingServiceId = state.recording.id
+                }
+                // Note: live updates come from currentRecordingWithPoints flow
             }
             is RecordingUiState.Stopping -> {
                 Timber.d("Recording stopping...")
@@ -268,7 +276,8 @@ class WebViewFragment : Fragment() {
             is RecordingUiState.Stopped -> {
                 Timber.d("Recording stopped: ${state.recordingId}")
                 stopRecordingService()
-                pushRecordTrackState(isRecording = false, pointCount = 0)
+                currentRecordingServiceId = null
+                pushRecordTrackState(null)
                 // Trigger sync in background
                 RecordingSyncWorker.enqueue(requireContext())
                 recordingViewModel.acknowledgeState()
@@ -276,7 +285,7 @@ class WebViewFragment : Fragment() {
             is RecordingUiState.Error -> {
                 Timber.e("Recording error: ${state.message}")
                 Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
-                pushRecordTrackState(isRecording = false, pointCount = 0)
+                pushRecordTrackState(null)
                 recordingViewModel.acknowledgeState()
             }
         }
@@ -297,13 +306,13 @@ class WebViewFragment : Fragment() {
         requireContext().startService(intent)
     }
 
-    private fun pushRecordTrackState(isRecording: Boolean, pointCount: Int) {
+    private fun pushRecordTrackState(recordingWithPoints: RecordingWithPoints?) {
         webView?.let { wv ->
-            val state = """"{\"isRecording\":${isRecording},\"pointCount\":${pointCount}}""""
+            val stateJson = Json.encodeToString(Json.encodeToString(recordingWithPoints))
             wv.post {
-                wv.evaluateJavascript("window.onRecordTrackState?.(JSON.parse($state))", null)
+                wv.evaluateJavascript("window.onRecordTrackState?.(JSON.parse($stateJson))", null)
             }
-            Timber.d("Pushed record track state: isRecording=$isRecording, pointCount=$pointCount")
+            Timber.d("Pushed record track state: ${recordingWithPoints?.recording?.pointCount} points, ${recordingWithPoints?.points?.size} track points")
         }
     }
 

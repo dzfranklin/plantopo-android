@@ -77,6 +77,22 @@ class RecordingService : Service() {
             ACTION_STOP_RECORDING -> {
                 stopRecording()
             }
+            else -> {
+                // Service was restarted by system without intent
+                // Check if there's an active recording and resume it
+                if (recordingId == null) {
+                    serviceScope.launch {
+                        val activeRecording = repository.getActiveRecording()
+                        if (activeRecording != null) {
+                            Timber.w("Service restarted, resuming recording ${activeRecording.id}")
+                            startRecording(activeRecording.id)
+                        } else {
+                            Timber.w("Service restarted but no active recording found")
+                            stopSelf()
+                        }
+                    }
+                }
+            }
         }
         return START_STICKY
     }
@@ -173,10 +189,12 @@ class RecordingService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Recording",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Track recording in progress"
                 setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
             }
 
             val manager = getSystemService(NotificationManager::class.java)
@@ -199,6 +217,7 @@ class RecordingService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setSilent(true)
             .build()
     }
 

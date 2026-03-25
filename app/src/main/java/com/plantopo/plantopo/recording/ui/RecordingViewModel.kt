@@ -3,11 +3,13 @@ package com.plantopo.plantopo.recording.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.plantopo.plantopo.recording.data.model.Recording
+import com.plantopo.plantopo.recording.data.model.RecordingWithPoints
 import com.plantopo.plantopo.recording.data.repository.RecordingRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -20,6 +22,9 @@ class RecordingViewModel(
 
     private val _currentRecording = MutableStateFlow<Recording?>(null)
     val currentRecording: StateFlow<Recording?> = _currentRecording.asStateFlow()
+
+    private val _currentRecordingWithPoints = MutableStateFlow<RecordingWithPoints?>(null)
+    val currentRecordingWithPoints: StateFlow<RecordingWithPoints?> = _currentRecordingWithPoints.asStateFlow()
 
     private var recordingObserverJob: Job? = null
 
@@ -41,9 +46,15 @@ class RecordingViewModel(
     private fun observeRecording(recordingId: Long) {
         recordingObserverJob?.cancel()
         recordingObserverJob = viewModelScope.launch {
-            repository.observeRecording(recordingId).collect { recording ->
-                _currentRecording.value = recording
-                Timber.d("Recording updated: ${recording?.pointCount} points")
+            combine(
+                repository.observeRecording(recordingId),
+                repository.observeTrackPoints(recordingId)
+            ) { recording, points ->
+                recording?.let { RecordingWithPoints(it, points) }
+            }.collect { recordingWithPoints ->
+                _currentRecording.value = recordingWithPoints?.recording
+                _currentRecordingWithPoints.value = recordingWithPoints
+                Timber.d("Recording updated: ${recordingWithPoints?.recording?.pointCount} points, ${recordingWithPoints?.points?.size} track points")
             }
         }
     }
@@ -74,6 +85,7 @@ class RecordingViewModel(
                 recordingObserverJob?.cancel()
                 recordingObserverJob = null
                 _currentRecording.value = null
+                _currentRecordingWithPoints.value = null
                 _uiState.value = RecordingUiState.Stopped(recording.id)
                 Timber.d("Recording stopped: ${recording.id}")
             } catch (e: Exception) {

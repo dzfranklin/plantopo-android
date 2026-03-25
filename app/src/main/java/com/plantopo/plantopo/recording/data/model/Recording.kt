@@ -14,6 +14,12 @@ data class Recording(
     val pointCount: Int = 0
 )
 
+@Serializable
+data class RecordingWithPoints(
+    val recording: Recording,
+    val points: List<TrackPoint>
+)
+
 fun RecordingEntity.toDomain(pointCount: Int = 0) = Recording(
     id = id,
     name = name,
