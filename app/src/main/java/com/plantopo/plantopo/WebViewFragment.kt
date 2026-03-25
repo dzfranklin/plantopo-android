@@ -8,19 +8,20 @@ import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import timber.log.Timber
-import java.net.URLEncoder
+import java.net.HttpURLConnection
+import java.net.URL
 
 class WebViewFragment : Fragment() {
     private var webView: WebView? = null
     private lateinit var authManager: AuthManager
     private lateinit var oauthManager: OAuthManager
-    private var lastKnownToken: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,7 +66,7 @@ class WebViewFragment : Fragment() {
             // Add JavaScript interface for Android-WebView communication
             addJavascriptInterface(
                 WebAppInterface { startRecording() },
-                "Android"
+                "Native"
             )
 
             webViewClient = object : WebViewClient() {
@@ -85,6 +86,66 @@ class WebViewFragment : Fragment() {
                     return false  // Allow navigation
                 }
 
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    val url = request?.url?.toString() ?: return null
+
+                    // Only intercept requests to BASE_URL
+                    if (!url.startsWith(Config.BASE_URL)) {
+                        return null
+                    }
+
+                    val token = authManager.getToken()
+                    if (token == null) {
+                        Timber.tag("WebView").w("No token available for request to $url")
+                        return null
+                    }
+
+                    try {
+                        val connection = URL(url).openConnection() as HttpURLConnection
+                        connection.requestMethod = request.method ?: "GET"
+
+                        // Add Authorization header
+                        connection.setRequestProperty("Authorization", "Bearer $token")
+
+                        // Copy original request headers
+                        request.requestHeaders.forEach { (key, value) ->
+                            if (key.equals("Authorization", ignoreCase = true)) {
+                                return@forEach  // Skip, we're setting it ourselves
+                            }
+                            connection.setRequestProperty(key, value)
+                        }
+
+                        connection.connect()
+
+                        val responseCode = connection.responseCode
+                        val responseMessage = connection.responseMessage
+                        val contentType = connection.contentType
+                        val encoding = connection.contentEncoding
+                        val inputStream = if (responseCode in 200..299) {
+                            connection.inputStream
+                        } else {
+                            connection.errorStream
+                        }
+
+                        Timber.tag("WebView").d("Intercepted request to $url: $responseCode $responseMessage")
+
+                        return WebResourceResponse(
+                            contentType,
+                            encoding,
+                            responseCode,
+                            responseMessage,
+                            connection.headerFields.mapValues { it.value.firstOrNull() ?: "" },
+                            inputStream
+                        )
+                    } catch (e: Exception) {
+                        Timber.tag("WebView").e(e, "Error intercepting request to $url")
+                        return null
+                    }
+                }
+
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                     super.onPageStarted(view, url, favicon)
                     Timber.tag("WebView").d("Page started loading: $url")
@@ -93,14 +154,11 @@ class WebViewFragment : Fragment() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     Timber.tag("WebView").d("Page finished loading: $url")
-
-                    // Sync session token from JavaScript context to native storage
-                    syncSessionToken()
                 }
 
                 override fun onReceivedError(
                     view: WebView?,
-                    request: android.webkit.WebResourceRequest?,
+                    request: WebResourceRequest?,
                     error: android.webkit.WebResourceError?
                 ) {
                     super.onReceivedError(view, request, error)
@@ -131,15 +189,12 @@ class WebViewFragment : Fragment() {
                 }
             }
 
-            // Complete native login by POSTing token, then server redirects to /
-            val token = authManager.getToken()
-            if (token != null) {
-                completeNativeLogin(token)
-            } else {
-                loadUrl(Config.BASE_URL)
-            }
+            // Load app - Authorization header will be injected automatically
+            Timber.i("Loading ${Config.BASE_URL}")
+            loadUrl(Config.BASE_URL)
         }
 
+        Timber.d("Returning WebView from onCreateView")
         return webView!!
     }
 
@@ -162,46 +217,6 @@ class WebViewFragment : Fragment() {
         super.onDestroyView()
         webView?.destroy()
         webView = null
-    }
-
-    private fun completeNativeLogin(token: String) {
-        Timber.i("Completing native login")
-        // POST token to server as form-encoded data, which sets cookie and redirects to /
-        val encodedToken = URLEncoder.encode(token, "UTF-8")
-        val postData = "token=$encodedToken".toByteArray()
-        webView?.postUrl("${Config.BASE_URL}/api/v1/complete-native-login", postData)
-    }
-
-    private fun syncSessionToken() {
-        // Read __INITIAL__SESSION__?.session?.token from JavaScript context
-        // This captures both auth and deauth (when token becomes null/undefined)
-        val js = """
-            (function() {
-                return window.__INITIAL__SESSION__?.session?.token;
-            })();
-        """.trimIndent()
-
-        webView?.evaluateJavascript(js) { result ->
-            // result is "null", "undefined", or a quoted string like "\"token_value\""
-            val token = when {
-                result == null || result == "null" || result == "undefined" -> null
-                result.startsWith("\"") && result.endsWith("\"") -> {
-                    // Remove quotes and unescape
-                    result.substring(1, result.length - 1)
-                }
-                else -> null
-            }
-
-            if (token != lastKnownToken) {
-                lastKnownToken = token
-                if (token != null) {
-                    authManager.saveToken(token)
-                } else {
-                    // Token is null/undefined, user is deauthenticated
-                    authManager.clearToken()
-                }
-            }
-        }
     }
 
     private fun startRecording() {
