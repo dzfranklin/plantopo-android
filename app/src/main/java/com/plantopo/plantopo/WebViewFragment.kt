@@ -1,21 +1,26 @@
 package com.plantopo.plantopo
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.CookieManager
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
+import timber.log.Timber
+import java.net.URLEncoder
 
 class WebViewFragment : Fragment() {
     private var webView: WebView? = null
     private lateinit var authManager: AuthManager
     private lateinit var oauthManager: OAuthManager
+    private var lastKnownToken: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,6 +40,7 @@ class WebViewFragment : Fragment() {
     ): View {
         // Only create WebView if authenticated
         if (!authManager.isAuthenticated()) {
+            Timber.i("Not authenticated, showing login view")
             // Show login screen with button
             val loginView = inflater.inflate(R.layout.fragment_login, container, false)
             loginView.findViewById<Button>(R.id.loginButton).setOnClickListener {
@@ -53,7 +59,7 @@ class WebViewFragment : Fragment() {
                 javaScriptEnabled = true
                 domStorageEnabled = true
                 databaseEnabled = true
-                userAgentString = "PlanTopoAndroid $userAgentString"
+                userAgentString = "PlanTopoNative $userAgentString"
             }
 
             // Add JavaScript interface for Android-WebView communication
@@ -63,21 +69,75 @@ class WebViewFragment : Fragment() {
             )
 
             webViewClient = object : WebViewClient() {
-                // No need to intercept URLs for OAuth anymore
-            }
+                override fun shouldOverrideUrlLoading(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): Boolean {
+                    val url = request?.url?.toString()
+                    Timber.tag("WebView").d("shouldOverrideUrlLoading: $url")
 
-            // Set the session cookie from stored token
-            val token = authManager.getToken()
-            if (token != null) {
-                CookieManager.getInstance().apply {
-                    setAcceptCookie(true)
-                    setCookie(Config.BASE_URL, "better-auth.session_token=$token; Path=/; SameSite=Lax")
-                    flush()
+                    // Only allow navigation within BASE_URL
+                    if (url?.startsWith(Config.BASE_URL) == false) {
+                        Timber.tag("WebView").w("Blocked navigation to external URL: $url")
+                        return true  // Block navigation
+                    }
+
+                    return false  // Allow navigation
+                }
+
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    Timber.tag("WebView").d("Page started loading: $url")
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    Timber.tag("WebView").d("Page finished loading: $url")
+
+                    // Sync session token from JavaScript context to native storage
+                    syncSessionToken()
+                }
+
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: android.webkit.WebResourceRequest?,
+                    error: android.webkit.WebResourceError?
+                ) {
+                    super.onReceivedError(view, request, error)
+                    Timber.tag("WebView").e("WebView error: ${error?.description} (${error?.errorCode}) for ${request?.url}")
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: android.webkit.WebResourceRequest?,
+                    errorResponse: android.webkit.WebResourceResponse?
+                ) {
+                    super.onReceivedHttpError(view, request, errorResponse)
+                    Timber.tag("WebView").e("HTTP error: ${errorResponse?.statusCode} for ${request?.url}")
                 }
             }
 
-            // Load the main app (user is authenticated)
-            loadUrl(Config.BASE_URL)
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                    val level = when (consoleMessage.messageLevel()) {
+                        ConsoleMessage.MessageLevel.ERROR -> Log.ERROR
+                        ConsoleMessage.MessageLevel.WARNING -> Log.WARN
+                        ConsoleMessage.MessageLevel.DEBUG -> Log.DEBUG
+                        else -> Log.INFO
+                    }
+                    Timber.tag("WebView").log(level, "${consoleMessage.message()} [${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}]")
+
+                    return true
+                }
+            }
+
+            // Complete native login by POSTing token, then server redirects to /
+            val token = authManager.getToken()
+            if (token != null) {
+                completeNativeLogin(token)
+            } else {
+                loadUrl(Config.BASE_URL)
+            }
         }
 
         return webView!!
@@ -87,6 +147,7 @@ class WebViewFragment : Fragment() {
         super.onResume()
         // If user just completed OAuth and we don't have a WebView yet, recreate the view
         if (authManager.isAuthenticated() && webView == null) {
+            Timber.i("onResume: just completed oauth, no webview yet")
             // Trigger view recreation by replacing fragment
             parentFragmentManager.beginTransaction()
                 .detach(this)
@@ -101,6 +162,46 @@ class WebViewFragment : Fragment() {
         super.onDestroyView()
         webView?.destroy()
         webView = null
+    }
+
+    private fun completeNativeLogin(token: String) {
+        Timber.i("Completing native login")
+        // POST token to server as form-encoded data, which sets cookie and redirects to /
+        val encodedToken = URLEncoder.encode(token, "UTF-8")
+        val postData = "token=$encodedToken".toByteArray()
+        webView?.postUrl("${Config.BASE_URL}/api/v1/complete-native-login", postData)
+    }
+
+    private fun syncSessionToken() {
+        // Read __INITIAL__SESSION__?.session?.token from JavaScript context
+        // This captures both auth and deauth (when token becomes null/undefined)
+        val js = """
+            (function() {
+                return window.__INITIAL__SESSION__?.session?.token;
+            })();
+        """.trimIndent()
+
+        webView?.evaluateJavascript(js) { result ->
+            // result is "null", "undefined", or a quoted string like "\"token_value\""
+            val token = when {
+                result == null || result == "null" || result == "undefined" -> null
+                result.startsWith("\"") && result.endsWith("\"") -> {
+                    // Remove quotes and unescape
+                    result.substring(1, result.length - 1)
+                }
+                else -> null
+            }
+
+            if (token != lastKnownToken) {
+                lastKnownToken = token
+                if (token != null) {
+                    authManager.saveToken(token)
+                } else {
+                    // Token is null/undefined, user is deauthenticated
+                    authManager.clearToken()
+                }
+            }
+        }
     }
 
     private fun startRecording() {

@@ -78,6 +78,9 @@ dependencies {
     // Chrome Custom Tabs for OAuth
     implementation(libs.androidx.browser)
 
+    // Timber for logging
+    implementation(libs.timber)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

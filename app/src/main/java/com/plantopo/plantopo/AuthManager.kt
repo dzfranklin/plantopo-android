@@ -3,6 +3,7 @@ package com.plantopo.plantopo
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import timber.log.Timber
 
 class AuthManager(context: Context) {
     private val masterKey = MasterKey.Builder(context)
@@ -18,23 +19,27 @@ class AuthManager(context: Context) {
     )
 
     fun saveToken(token: String) {
+        Timber.i("Saving authentication token")
         sharedPreferences.edit()
             .putString(KEY_SESSION_TOKEN, token)
             .apply()
     }
 
     fun getToken(): String? {
-        return sharedPreferences.getString(KEY_SESSION_TOKEN, null)
+        val token = sharedPreferences.getString(KEY_SESSION_TOKEN, null)
+        return token
     }
 
     fun clearToken() {
+        Timber.i("Clearing authentication token")
         sharedPreferences.edit()
             .remove(KEY_SESSION_TOKEN)
             .apply()
     }
 
     fun isAuthenticated(): Boolean {
-        return getToken() != null
+        val authenticated = getToken() != null
+        return authenticated
     }
 
     companion object {
