@@ -17,6 +17,7 @@ class WebViewFragment : Fragment() {
     private var webView: WebView? = null
     private lateinit var authManager: AuthManager
     private lateinit var oauthManager: OAuthManager
+    private var isRecording = false;
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -154,14 +155,14 @@ class WebViewFragment : Fragment() {
     private fun startRecordingTrack() {
         Timber.i("Start recording track")
         // TODO: Implement actual track recording logic
-        // For now, just push updated state
+        isRecording = true;
         pushRecordTrackState()
     }
 
     private fun stopRecordingTrack() {
         Timber.i("Stop recording track")
         // TODO: Implement actual track recording logic
-        // For now, just push updated state
+        isRecording = false;
         pushRecordTrackState()
     }
 
@@ -173,7 +174,7 @@ class WebViewFragment : Fragment() {
     private fun pushRecordTrackState() {
         webView?.let { wv ->
             // TODO: Replace with actual state from recording service/repository
-            val state = """"{\"isRecording\":false,\"points\":[]}""""
+            val state = """"{\"isRecording\":${isRecording},\"points\":[]}""""
             wv.post {
                 wv.evaluateJavascript("window.onRecordTrackState?.(JSON.parse($state))", null)
             }
