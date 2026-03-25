@@ -30,6 +30,7 @@ import com.plantopo.plantopo.recording.ui.RecordingUiState
 import com.plantopo.plantopo.recording.ui.RecordingViewModel
 import com.plantopo.plantopo.recording.util.PermissionHandler
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import timber.log.Timber
 
@@ -168,7 +169,10 @@ class WebViewFragment : Fragment() {
                         ConsoleMessage.MessageLevel.DEBUG -> Log.DEBUG
                         else -> Log.INFO
                     }
-                    Timber.tag("WebView").log(level, "console: ${consoleMessage.message()} [${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}]")
+                    Timber.tag("WebView").log(
+                        level,
+                        "console: ${consoleMessage.message()} [${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}]"
+                    )
 
                     return true
                 }
@@ -258,9 +262,11 @@ class WebViewFragment : Fragment() {
             is RecordingUiState.Idle -> {
                 pushRecordTrackState(null)
             }
+
             is RecordingUiState.Starting -> {
                 Timber.d("Recording starting...")
             }
+
             is RecordingUiState.Active -> {
                 Timber.d("Recording started: ${state.recording.id}")
                 // Only start service if not already started for this recording
@@ -270,9 +276,11 @@ class WebViewFragment : Fragment() {
                 }
                 // Note: live updates come from currentRecordingWithPoints flow
             }
+
             is RecordingUiState.Stopping -> {
                 Timber.d("Recording stopping...")
             }
+
             is RecordingUiState.Stopped -> {
                 Timber.d("Recording stopped: ${state.recordingId}")
                 stopRecordingService()
@@ -282,6 +290,7 @@ class WebViewFragment : Fragment() {
                 RecordingSyncWorker.enqueue(requireContext())
                 recordingViewModel.acknowledgeState()
             }
+
             is RecordingUiState.Error -> {
                 Timber.e("Recording error: ${state.message}")
                 Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
@@ -307,13 +316,17 @@ class WebViewFragment : Fragment() {
     }
 
     private fun pushRecordTrackState(recording: Recording?) {
-        webView?.let { wv ->
-            val stateJson = Json.encodeToString(Json.encodeToString(recording))
-            wv.post {
-                wv.evaluateJavascript("window.onRecordTrackState?.(JSON.parse($stateJson))", null)
-            }
-            Timber.d("Pushed record track state: ${recording?.points?.size} track points")
+        val wv = webView;
+        if (wv == null) return;
+
+        val state = RecordTrackState(recording)
+        val stateJson = Json.encodeToString(Json.encodeToString(state))
+
+        wv.post {
+            wv.evaluateJavascript("window.onRecordTrackState?.(JSON.parse($stateJson))", null)
         }
+
+        Timber.d("Pushed record track state: ${recording?.points?.size} track points")
     }
 
     @Suppress("unused")
@@ -340,4 +353,7 @@ class WebViewFragment : Fragment() {
             fragment.onRecordTrackReady()
         }
     }
+
+    @Serializable
+    private data class RecordTrackState(val recording: Recording?)
 }
