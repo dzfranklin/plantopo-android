@@ -75,6 +75,9 @@ dependencies {
     // WebView
     implementation(libs.androidx.webkit)
 
+    // Chrome Custom Tabs for OAuth
+    implementation(libs.androidx.browser)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

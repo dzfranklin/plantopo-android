@@ -18,6 +18,11 @@ class WebViewFragment : Fragment() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         authManager = AuthManager(requireContext())
+
+        // Enable WebView debugging in debug builds
+        if (BuildConfig.DEBUG) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
     }
 
     override fun onCreateView(
