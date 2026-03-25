@@ -6,8 +6,8 @@ import com.plantopo.plantopo.recording.data.db.RecordingDao
 import com.plantopo.plantopo.recording.data.db.RecordingEntity
 import com.plantopo.plantopo.recording.data.db.RecordingStatus
 import com.plantopo.plantopo.recording.data.db.TrackPointDao
+import com.plantopo.plantopo.recording.data.model.RecordingMeta
 import com.plantopo.plantopo.recording.data.model.Recording
-import com.plantopo.plantopo.recording.data.model.RecordingWithPoints
 import com.plantopo.plantopo.recording.data.model.TrackPoint
 import com.plantopo.plantopo.recording.data.model.toDomain
 import com.plantopo.plantopo.recording.data.model.toEntity
@@ -22,20 +22,20 @@ class RecordingRepository(
     private val trpcClient: TrpcClient
 ) {
     // Observe a specific recording
-    fun observeRecording(id: Long): Flow<Recording?> {
+    fun observeRecording(id: Long): Flow<RecordingMeta?> {
         return recordingDao.observeById(id).map { entity -> entity?.toDomain() }
     }
 
     // Get the active recording
-    suspend fun getActiveRecording(): Recording? {
+    suspend fun getActiveRecording(): RecordingMeta? {
         val entity = recordingDao.getActiveRecording() ?: return null
         return entity.toDomain()
     }
 
-    suspend fun getActiveRecordingWithPoints(): RecordingWithPoints? {
+    suspend fun getActiveRecordingWithPoints(): Recording? {
         val entity = recordingDao.getActiveRecording() ?: return null
         val points = trackPointDao.getPointsForRecording(entity.id)
-        return RecordingWithPoints(entity.toDomain(), points.map { it.toDomain() })
+        return Recording(entity.toDomain(), points.map { it.toDomain() })
     }
 
     // Start a new recording
@@ -82,10 +82,10 @@ class RecordingRepository(
             )
             val points = trackPointDao.getPointsForRecording(id)
 
-            val payload = RecordingWithPoints(recording.toDomain(), points.map { it.toDomain() });
+            val payload = Recording(recording.toDomain(), points.map { it.toDomain() });
 
             // Call the tRPC endpoint to upload the recording
-            trpcClient.mutation<RecordingWithPoints, Unit>("track.upload", payload)
+            trpcClient.mutation<Recording, Unit>("track.upload", payload)
 
             // Mark as synced
             recordingDao.update(
@@ -117,7 +117,7 @@ class RecordingRepository(
     }
 
     // Get unsynced recordings
-    suspend fun getUnsyncedRecordings(): List<Recording> {
+    suspend fun getUnsyncedRecordings(): List<RecordingMeta> {
         return recordingDao.getUnsyncedRecordings().map(RecordingEntity::toDomain)
     }
 

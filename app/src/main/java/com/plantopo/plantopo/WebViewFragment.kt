@@ -22,7 +22,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.plantopo.plantopo.recording.data.db.RecordingDatabase
-import com.plantopo.plantopo.recording.data.model.RecordingWithPoints
+import com.plantopo.plantopo.recording.data.model.Recording
 import com.plantopo.plantopo.recording.data.repository.RecordingRepository
 import com.plantopo.plantopo.recording.service.RecordingService
 import com.plantopo.plantopo.recording.sync.RecordingSyncWorker
@@ -106,7 +106,7 @@ class WebViewFragment : Fragment() {
         // Observe current recording for live updates
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                recordingViewModel.currentRecordingWithPoints.collect { recordingWithPoints ->
+                recordingViewModel.currentRecording.collect { recordingWithPoints ->
                     pushRecordTrackState(recordingWithPoints)
                 }
             }
@@ -202,7 +202,7 @@ class WebViewFragment : Fragment() {
         }
 
         // Check if there's an active recording and ensure service is running
-        val currentRecording = recordingViewModel.currentRecordingWithPoints.value
+        val currentRecording = recordingViewModel.currentRecording.value
         if (currentRecording != null && currentRecordingServiceId != currentRecording.id) {
             Timber.i("Found active recording ${currentRecording.id} on resume, restarting service")
             startRecordingService(currentRecording.id)
@@ -249,7 +249,7 @@ class WebViewFragment : Fragment() {
 
     private fun onRecordTrackReady() {
         Timber.i("Record track ready callback from web")
-        val recordingWithPoints = recordingViewModel.currentRecordingWithPoints.value
+        val recordingWithPoints = recordingViewModel.currentRecording.value
         pushRecordTrackState(recordingWithPoints)
     }
 
@@ -306,13 +306,13 @@ class WebViewFragment : Fragment() {
         requireContext().startService(intent)
     }
 
-    private fun pushRecordTrackState(recordingWithPoints: RecordingWithPoints?) {
+    private fun pushRecordTrackState(recording: Recording?) {
         webView?.let { wv ->
-            val stateJson = Json.encodeToString(Json.encodeToString(recordingWithPoints))
+            val stateJson = Json.encodeToString(Json.encodeToString(recording))
             wv.post {
                 wv.evaluateJavascript("window.onRecordTrackState?.(JSON.parse($stateJson))", null)
             }
-            Timber.d("Pushed record track state: ${recordingWithPoints?.recording?.pointCount} points, ${recordingWithPoints?.points?.size} track points")
+            Timber.d("Pushed record track state: ${recording?.points?.size} track points")
         }
     }
 

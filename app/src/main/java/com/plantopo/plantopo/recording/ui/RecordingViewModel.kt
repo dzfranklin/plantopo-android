@@ -2,7 +2,7 @@ package com.plantopo.plantopo.recording.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.plantopo.plantopo.recording.data.model.RecordingWithPoints
+import com.plantopo.plantopo.recording.data.model.Recording
 import com.plantopo.plantopo.recording.data.repository.RecordingRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,8 +19,8 @@ class RecordingViewModel(
     private val _uiState = MutableStateFlow<RecordingUiState>(RecordingUiState.Idle)
     val uiState: StateFlow<RecordingUiState> = _uiState.asStateFlow()
 
-    private val _currentRecordingWithPoints = MutableStateFlow<RecordingWithPoints?>(null)
-    val currentRecordingWithPoints: StateFlow<RecordingWithPoints?> = _currentRecordingWithPoints.asStateFlow()
+    private val _currentRecording = MutableStateFlow<Recording?>(null)
+    val currentRecording: StateFlow<Recording?> = _currentRecording.asStateFlow()
 
     private var recordingObserverJob: Job? = null
 
@@ -31,7 +31,7 @@ class RecordingViewModel(
     private fun checkForActiveRecording() {
         viewModelScope.launch {
             val activeRecording = repository.getActiveRecordingWithPoints()
-            _currentRecordingWithPoints.value = activeRecording
+            _currentRecording.value = activeRecording
             if (activeRecording != null) {
                 _uiState.value = RecordingUiState.Active(activeRecording)
                 observeRecording(activeRecording.id)
@@ -46,10 +46,10 @@ class RecordingViewModel(
                 repository.observeRecording(recordingId),
                 repository.observeTrackPoints(recordingId)
             ) { recording, points ->
-                recording?.let { RecordingWithPoints(it, points) }
+                recording?.let { Recording(it, points) }
             }.collect { recordingWithPoints ->
-                _currentRecordingWithPoints.value = recordingWithPoints
-                Timber.d("Recording updated: ${recordingWithPoints?.recording?.pointCount} points, ${recordingWithPoints?.points?.size} track points")
+                _currentRecording.value = recordingWithPoints
+                Timber.d("Recording updated: ${recordingWithPoints?.meta?.pointCount} points, ${recordingWithPoints?.points?.size} track points")
             }
         }
     }
@@ -60,7 +60,7 @@ class RecordingViewModel(
                 _uiState.value = RecordingUiState.Starting
                 val recordingId = repository.startRecording(name)
                 val recording = repository.getActiveRecordingWithPoints()
-                _currentRecordingWithPoints.value = recording
+                _currentRecording.value = recording
                 _uiState.value = RecordingUiState.Active(recording!!)
                 observeRecording(recordingId)
                 Timber.d("Recording started: $recordingId")
@@ -72,14 +72,14 @@ class RecordingViewModel(
     }
 
     fun stopRecording() {
-        val recording = _currentRecordingWithPoints.value ?: return
+        val recording = _currentRecording.value ?: return
         viewModelScope.launch {
             try {
                 _uiState.value = RecordingUiState.Stopping
                 repository.stopRecording(recording.id)
                 recordingObserverJob?.cancel()
                 recordingObserverJob = null
-                _currentRecordingWithPoints.value = null
+                _currentRecording.value = null
                 _uiState.value = RecordingUiState.Stopped(recording.id)
                 Timber.d("Recording stopped: ${recording.id}")
             } catch (e: Exception) {
@@ -97,7 +97,7 @@ class RecordingViewModel(
 sealed class RecordingUiState {
     data object Idle : RecordingUiState()
     data object Starting : RecordingUiState()
-    data class Active(val recording: RecordingWithPoints) : RecordingUiState()
+    data class Active(val recording: Recording) : RecordingUiState()
     data object Stopping : RecordingUiState()
     data class Stopped(val recordingId: Long) : RecordingUiState()
     data class Error(val message: String) : RecordingUiState()
