@@ -7,16 +7,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Button
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import timber.log.Timber
-import java.net.HttpURLConnection
-import java.net.URL
 
 class WebViewFragment : Fragment() {
     private var webView: WebView? = null
@@ -50,6 +45,10 @@ class WebViewFragment : Fragment() {
             return loginView
         }
 
+        // Inflate the fragment layout
+        val view = inflater.inflate(R.layout.fragment_webview, container, false)
+        val webviewContainer = view.findViewById<ViewGroup>(R.id.webview_container)
+
         webView = WebView(requireContext()).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -65,115 +64,11 @@ class WebViewFragment : Fragment() {
 
             // Add JavaScript interface for Android-WebView communication
             addJavascriptInterface(
-                WebAppInterface { startRecording() },
+                WebAppInterface(this@WebViewFragment),
                 "Native"
             )
 
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(
-                    view: WebView?,
-                    request: WebResourceRequest?
-                ): Boolean {
-                    val url = request?.url?.toString()
-                    Timber.tag("WebView").d("shouldOverrideUrlLoading: $url")
-
-                    // Only allow navigation within BASE_URL
-                    if (url?.startsWith(Config.BASE_URL) == false) {
-                        Timber.tag("WebView").w("Blocked navigation to external URL: $url")
-                        return true  // Block navigation
-                    }
-
-                    return false  // Allow navigation
-                }
-
-                override fun shouldInterceptRequest(
-                    view: WebView?,
-                    request: WebResourceRequest?
-                ): WebResourceResponse? {
-                    val url = request?.url?.toString() ?: return null
-
-                    // Only intercept requests to BASE_URL
-                    if (!url.startsWith(Config.BASE_URL)) {
-                        return null
-                    }
-
-                    val token = authManager.getToken()
-                    if (token == null) {
-                        Timber.tag("WebView").w("No token available for request to $url")
-                        return null
-                    }
-
-                    try {
-                        val connection = URL(url).openConnection() as HttpURLConnection
-                        connection.requestMethod = request.method ?: "GET"
-
-                        // Add Authorization header
-                        connection.setRequestProperty("Authorization", "Bearer $token")
-
-                        // Copy original request headers
-                        request.requestHeaders.forEach { (key, value) ->
-                            if (key.equals("Authorization", ignoreCase = true)) {
-                                return@forEach  // Skip, we're setting it ourselves
-                            }
-                            connection.setRequestProperty(key, value)
-                        }
-
-                        connection.connect()
-
-                        val responseCode = connection.responseCode
-                        val responseMessage = connection.responseMessage
-                        val contentType = connection.contentType
-                        val encoding = connection.contentEncoding
-                        val inputStream = if (responseCode in 200..299) {
-                            connection.inputStream
-                        } else {
-                            connection.errorStream
-                        }
-
-                        Timber.tag("WebView").d("Intercepted request to $url: $responseCode $responseMessage")
-
-                        return WebResourceResponse(
-                            contentType,
-                            encoding,
-                            responseCode,
-                            responseMessage,
-                            connection.headerFields.mapValues { it.value.firstOrNull() ?: "" },
-                            inputStream
-                        )
-                    } catch (e: Exception) {
-                        Timber.tag("WebView").e(e, "Error intercepting request to $url")
-                        return null
-                    }
-                }
-
-                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                    super.onPageStarted(view, url, favicon)
-                    Timber.tag("WebView").d("Page started loading: $url")
-                }
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    Timber.tag("WebView").d("Page finished loading: $url")
-                }
-
-                override fun onReceivedError(
-                    view: WebView?,
-                    request: WebResourceRequest?,
-                    error: android.webkit.WebResourceError?
-                ) {
-                    super.onReceivedError(view, request, error)
-                    Timber.tag("WebView").e("WebView error: ${error?.description} (${error?.errorCode}) for ${request?.url}")
-                }
-
-                override fun onReceivedHttpError(
-                    view: WebView?,
-                    request: android.webkit.WebResourceRequest?,
-                    errorResponse: android.webkit.WebResourceResponse?
-                ) {
-                    super.onReceivedHttpError(view, request, errorResponse)
-                    Timber.tag("WebView").e("HTTP error: ${errorResponse?.statusCode} for ${request?.url}")
-                }
-            }
+            webViewClient = PlanTopoWebViewClient()
 
             webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
@@ -183,19 +78,30 @@ class WebViewFragment : Fragment() {
                         ConsoleMessage.MessageLevel.DEBUG -> Log.DEBUG
                         else -> Log.INFO
                     }
-                    Timber.tag("WebView").log(level, "${consoleMessage.message()} [${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}]")
+                    Timber.tag("WebView").log(level, "console: ${consoleMessage.message()} [${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}]")
 
                     return true
                 }
             }
 
-            // Load app - Authorization header will be injected automatically
-            Timber.i("Loading ${Config.BASE_URL}")
-            loadUrl(Config.BASE_URL)
+            // Establish session before loading
+            Timber.i("Establishing session for ${Config.BASE_URL}")
+            refreshSession { success ->
+                if (success) {
+                    Timber.i("Session established, loading ${Config.BASE_URL}")
+                    loadUrl(Config.BASE_URL)
+                } else {
+                    Timber.e("Failed to establish session")
+                    doLogout()
+                }
+            }
         }
 
-        Timber.d("Returning WebView from onCreateView")
-        return webView!!
+        // Add WebView to container
+        webviewContainer.addView(webView)
+
+        Timber.d("Returning WebView container from onCreateView")
+        return view
     }
 
     override fun onResume() {
@@ -210,6 +116,10 @@ class WebViewFragment : Fragment() {
             parentFragmentManager.beginTransaction()
                 .attach(this)
                 .commit()
+        } else if (authManager.isAuthenticated() && webView != null) {
+            // Refresh session when app resumes to keep it alive
+            Timber.i("onResume: proactively refreshing session")
+            refreshSession()
         }
     }
 
@@ -219,16 +129,91 @@ class WebViewFragment : Fragment() {
         webView = null
     }
 
+    private fun refreshSession(onComplete: ((Boolean) -> Unit)? = null) {
+        val token = authManager.getToken()
+        if (token == null) {
+            Timber.tag("WebView").w("Cannot refresh session: no token available")
+            onComplete?.invoke(false)
+            return
+        }
+
+        Thread {
+            try {
+                val url = java.net.URL("${Config.BASE_URL}/api/v1/refresh-session")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Length", "0")
+                connection.instanceFollowRedirects = false
+
+                val responseCode = connection.responseCode
+                Timber.tag("WebView").i("Session refresh response: $responseCode")
+
+                if (responseCode in 200..299) {
+                    // Extract and store cookies
+                    val cookies = connection.headerFields["Set-Cookie"]
+                    if (cookies != null) {
+                        val cookieManager = android.webkit.CookieManager.getInstance()
+                        cookies.forEach { cookie ->
+                            cookieManager.setCookie(Config.BASE_URL, cookie)
+                            Timber.tag("WebView").d("Set cookie: ${cookie.take(50)}...")
+                        }
+                        cookieManager.flush()
+                    }
+
+                    activity?.runOnUiThread {
+                        onComplete?.invoke(true)
+                    }
+                } else {
+                    Timber.tag("WebView").e("Session refresh failed: $responseCode")
+                    activity?.runOnUiThread {
+                        onComplete?.invoke(false)
+                        if (responseCode == 401) {
+                            // Token is invalid, log out
+                            doLogout()
+                        }
+                    }
+                }
+
+                connection.disconnect()
+            } catch (e: Exception) {
+                Timber.tag("WebView").e(e, "Error refreshing session")
+                activity?.runOnUiThread {
+                    onComplete?.invoke(false)
+                }
+            }
+        }.start()
+    }
+
     private fun startRecording() {
         findNavController().navigate(R.id.action_webViewFragment_to_recordingFragment)
     }
 
+    private fun doLogout() {
+        Timber.i("Logging out")
+        authManager.clearToken()
+
+        // Recreate the view to show login screen
+        parentFragmentManager.beginTransaction()
+            .detach(this)
+            .commit()
+        parentFragmentManager.beginTransaction()
+            .attach(this)
+            .commit()
+    }
+
+    @Suppress("unused")
     class WebAppInterface(
-        private val onStartRecording: () -> Unit
+        private val fragment: WebViewFragment
     ) {
         @android.webkit.JavascriptInterface
         fun startRecording() {
-            onStartRecording()
+            fragment.startRecording()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun logout() {
+            fragment.doLogout()
         }
     }
 }
