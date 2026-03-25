@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 kotlin {
@@ -87,6 +88,17 @@ dependencies {
 
     // JSON serialization
     implementation(libs.kotlinx.serialization.json)
+
+    // Room database
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    // WorkManager for background sync
+    implementation(libs.androidx.work.runtime.ktx)
+
+    // Location services
+    implementation(libs.play.services.location)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)

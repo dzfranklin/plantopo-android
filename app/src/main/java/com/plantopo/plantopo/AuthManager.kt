@@ -82,9 +82,9 @@ class AuthManager(
                     .build()
 
                 val response = httpClient.newCall(request).execute()
-                val responseBody = response.body?.string()
+                val responseBody = response.body.string()
 
-                if (response.isSuccessful && responseBody != null) {
+                if (response.isSuccessful) {
                     // Extract API token from response body
                     val sessionResponse = json.decodeFromString<NativeSessionResponse>(responseBody)
                     val apiToken = sessionResponse.token
@@ -97,12 +97,14 @@ class AuthManager(
                     val cookies = response.headers("Set-Cookie")
                     if (cookies.isNotEmpty()) {
                         val cookieManager = android.webkit.CookieManager.getInstance()
-                        cookies.forEach { cookie ->
-                            cookieManager.setCookie(baseUrl, cookie)
-                            Timber.d("Set cookie: ${cookie.take(50)}...")
+                        cookies.forEachIndexed { index, cookie ->
+                            cookieManager.setCookie(baseUrl, cookie) { success ->
+                                Timber.d("Set cookie ${index + 1}/${cookies.size}: ${cookie.take(50)}... - Success: $success")
+                                if (index == cookies.size - 1) {
+                                    Timber.i("Session cookies set successfully")
+                                }
+                            }
                         }
-                        cookieManager.flush()
-                        Timber.i("Session cookies set successfully")
                     }
 
                     _isExchangingToken = false

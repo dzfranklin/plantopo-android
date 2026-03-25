@@ -1,0 +1,98 @@
+package com.plantopo.plantopo.recording.ui
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.plantopo.plantopo.recording.data.model.Recording
+import com.plantopo.plantopo.recording.data.repository.RecordingRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class RecordingViewModel(
+    private val repository: RecordingRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow<RecordingUiState>(RecordingUiState.Idle)
+    val uiState: StateFlow<RecordingUiState> = _uiState.asStateFlow()
+
+    private val _currentRecording = MutableStateFlow<Recording?>(null)
+    val currentRecording: StateFlow<Recording?> = _currentRecording.asStateFlow()
+
+    private var recordingObserverJob: Job? = null
+
+    init {
+        checkForActiveRecording()
+    }
+
+    private fun checkForActiveRecording() {
+        viewModelScope.launch {
+            val activeRecording = repository.getActiveRecording()
+            _currentRecording.value = activeRecording
+            if (activeRecording != null) {
+                _uiState.value = RecordingUiState.Active(activeRecording)
+                observeRecording(activeRecording.id)
+            }
+        }
+    }
+
+    private fun observeRecording(recordingId: Long) {
+        recordingObserverJob?.cancel()
+        recordingObserverJob = viewModelScope.launch {
+            repository.observeRecording(recordingId).collect { recording ->
+                _currentRecording.value = recording
+                Timber.d("Recording updated: ${recording?.pointCount} points")
+            }
+        }
+    }
+
+    fun startRecording(name: String? = null) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = RecordingUiState.Starting
+                val recordingId = repository.startRecording(name)
+                val recording = repository.getActiveRecording()
+                _currentRecording.value = recording
+                _uiState.value = RecordingUiState.Active(recording!!)
+                observeRecording(recordingId)
+                Timber.d("Recording started: $recordingId")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to start recording")
+                _uiState.value = RecordingUiState.Error(e.message ?: "Failed to start recording")
+            }
+        }
+    }
+
+    fun stopRecording() {
+        val recording = _currentRecording.value ?: return
+        viewModelScope.launch {
+            try {
+                _uiState.value = RecordingUiState.Stopping
+                repository.stopRecording(recording.id)
+                recordingObserverJob?.cancel()
+                recordingObserverJob = null
+                _currentRecording.value = null
+                _uiState.value = RecordingUiState.Stopped(recording.id)
+                Timber.d("Recording stopped: ${recording.id}")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to stop recording")
+                _uiState.value = RecordingUiState.Error(e.message ?: "Failed to stop recording")
+            }
+        }
+    }
+
+    fun acknowledgeState() {
+        _uiState.value = RecordingUiState.Idle
+    }
+}
+
+sealed class RecordingUiState {
+    data object Idle : RecordingUiState()
+    data object Starting : RecordingUiState()
+    data class Active(val recording: Recording) : RecordingUiState()
+    data object Stopping : RecordingUiState()
+    data class Stopped(val recordingId: Long) : RecordingUiState()
+    data class Error(val message: String) : RecordingUiState()
+}
