@@ -1,5 +1,6 @@
 package com.plantopo.plantopo
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -10,7 +11,6 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.Button
 import androidx.fragment.app.Fragment
-import androidx.navigation.fragment.findNavController
 import timber.log.Timber
 
 class WebViewFragment : Fragment() {
@@ -41,6 +41,7 @@ class WebViewFragment : Fragment() {
         }
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -76,7 +77,6 @@ class WebViewFragment : Fragment() {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                databaseEnabled = true
                 userAgentString = "PlanTopoNative $userAgentString"
             }
 
@@ -138,10 +138,6 @@ class WebViewFragment : Fragment() {
         webView = null
     }
 
-    private fun startRecording() {
-        findNavController().navigate(R.id.action_webViewFragment_to_recordingFragment)
-    }
-
     private fun doLogout() {
         Timber.i("Logging out")
         authManager.clearToken()
@@ -189,11 +185,6 @@ class WebViewFragment : Fragment() {
     class WebAppInterface(
         private val fragment: WebViewFragment
     ) {
-        @android.webkit.JavascriptInterface
-        fun startRecording() {
-            fragment.startRecording()
-        }
-
         @android.webkit.JavascriptInterface
         fun logout() {
             fragment.doLogout()

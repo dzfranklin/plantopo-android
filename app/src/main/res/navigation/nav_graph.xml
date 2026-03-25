@@ -7,14 +7,5 @@
     <fragment
         android:id="@+id/webViewFragment"
         android:name="com.plantopo.plantopo.WebViewFragment"
-        android:label="WebView">
-        <action
-            android:id="@+id/action_webViewFragment_to_recordingFragment"
-            app:destination="@id/recordingFragment" />
-    </fragment>
-
-    <fragment
-        android:id="@+id/recordingFragment"
-        android:name="com.plantopo.plantopo.RecordingFragment"
-        android:label="Recording" />
+        android:label="WebView" />
 </navigation>
