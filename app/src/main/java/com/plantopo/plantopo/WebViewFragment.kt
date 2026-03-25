@@ -8,16 +8,19 @@ import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 
 class WebViewFragment : Fragment() {
     private var webView: WebView? = null
     private lateinit var authManager: AuthManager
+    private lateinit var oauthManager: OAuthManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         authManager = AuthManager(requireContext())
+        oauthManager = OAuthManager(requireContext())
 
         // Enable WebView debugging in debug builds
         if (BuildConfig.DEBUG) {
@@ -30,6 +33,16 @@ class WebViewFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        // Only create WebView if authenticated
+        if (!authManager.isAuthenticated()) {
+            // Show login screen with button
+            val loginView = inflater.inflate(R.layout.fragment_login, container, false)
+            loginView.findViewById<Button>(R.id.loginButton).setOnClickListener {
+                oauthManager.launchOAuthFlow(this)
+            }
+            return loginView
+        }
+
         webView = WebView(requireContext()).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -50,56 +63,44 @@ class WebViewFragment : Fragment() {
             )
 
             webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(
-                    view: WebView,
-                    request: WebResourceRequest
-                ): Boolean {
-                    // Intercept the login completion redirect
-                    if (request.url.path == "/android-complete-login") {
-                        syncTokenFromCookies()
-                        // Navigate back to home after successful login
-                        view.loadUrl(Config.BASE_URL)
-                        return true
-                    }
-                    return false
-                }
+                // No need to intercept URLs for OAuth anymore
+            }
 
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    // Sync token after each page load in case it was refreshed
-                    syncTokenFromCookies()
+            // Set the session cookie from stored token
+            val token = authManager.getToken()
+            if (token != null) {
+                CookieManager.getInstance().apply {
+                    setAcceptCookie(true)
+                    setCookie(Config.BASE_URL, "better-auth.session_token=$token; Path=/; SameSite=Lax")
+                    flush()
                 }
             }
 
-            // Load initial URL
-            if (authManager.isAuthenticated()) {
-                // Already authenticated, load the main app
-                loadUrl(Config.BASE_URL)
-            } else {
-                // Not authenticated, start login flow
-                loadUrl("${Config.BASE_URL}/login?returnTo=/android-complete-login")
-            }
+            // Load the main app (user is authenticated)
+            loadUrl(Config.BASE_URL)
         }
 
         return webView!!
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // If user just completed OAuth and we don't have a WebView yet, recreate the view
+        if (authManager.isAuthenticated() && webView == null) {
+            // Trigger view recreation by replacing fragment
+            parentFragmentManager.beginTransaction()
+                .detach(this)
+                .commit()
+            parentFragmentManager.beginTransaction()
+                .attach(this)
+                .commit()
+        }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         webView?.destroy()
         webView = null
-    }
-
-    private fun syncTokenFromCookies() {
-        val cookies = CookieManager.getInstance().getCookie(Config.BASE_URL)
-        val token = cookies?.split(";")
-            ?.map { it.trim() }
-            ?.firstOrNull { it.startsWith("better-auth.session_token=") }
-            ?.removePrefix("better-auth.session_token=")
-
-        if (token != null && token != authManager.getToken()) {
-            authManager.saveToken(token)
-        }
     }
 
     private fun startRecording() {
