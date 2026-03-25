@@ -164,7 +164,6 @@ class RecordingService : Service() {
 
             if (pointCount % 10 == 0) {
                 Timber.d("Recorded $pointCount points")
-                updateNotification()
             }
         }
     }
@@ -196,17 +195,11 @@ class RecordingService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Recording Track")
-            .setContentText("$pointCount points recorded")
+            .setContentText("GPS tracking active")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
-    }
-
-    private fun updateNotification() {
-        val notification = createNotification()
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, notification)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
