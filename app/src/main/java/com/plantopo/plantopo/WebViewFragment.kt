@@ -84,17 +84,10 @@ class WebViewFragment : Fragment() {
                 }
             }
 
-            // Establish session before loading
-            Timber.i("Establishing session for ${Config.BASE_URL}")
-            refreshSession { success ->
-                if (success) {
-                    Timber.i("Session established, loading ${Config.BASE_URL}")
-                    loadUrl(Config.BASE_URL)
-                } else {
-                    Timber.e("Failed to establish session")
-                    doLogout()
-                }
-            }
+            // Session cookies already set by AuthManager during OAuth callback
+            // Just load the app directly
+            Timber.i("Loading ${Config.BASE_URL}")
+            loadUrl(Config.BASE_URL)
         }
 
         // Add WebView to container
@@ -116,73 +109,15 @@ class WebViewFragment : Fragment() {
             parentFragmentManager.beginTransaction()
                 .attach(this)
                 .commit()
-        } else if (authManager.isAuthenticated() && webView != null) {
-            // Refresh session when app resumes to keep it alive
-            Timber.i("onResume: proactively refreshing session")
-            refreshSession()
         }
+        // Note: No need to refresh session on resume - better-auth automatically
+        // refreshes the session when it's used, and it has a 1 year expiry
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         webView?.destroy()
         webView = null
-    }
-
-    private fun refreshSession(onComplete: ((Boolean) -> Unit)? = null) {
-        val token = authManager.getToken()
-        if (token == null) {
-            Timber.tag("WebView").w("Cannot refresh session: no token available")
-            onComplete?.invoke(false)
-            return
-        }
-
-        Thread {
-            try {
-                val url = java.net.URL("${Config.BASE_URL}/api/v1/refresh-session")
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.setRequestProperty("Authorization", "Bearer $token")
-                connection.setRequestProperty("Content-Length", "0")
-                connection.instanceFollowRedirects = false
-
-                val responseCode = connection.responseCode
-                Timber.tag("WebView").i("Session refresh response: $responseCode")
-
-                if (responseCode in 200..299) {
-                    // Extract and store cookies
-                    val cookies = connection.headerFields["Set-Cookie"]
-                    if (cookies != null) {
-                        val cookieManager = android.webkit.CookieManager.getInstance()
-                        cookies.forEach { cookie ->
-                            cookieManager.setCookie(Config.BASE_URL, cookie)
-                            Timber.tag("WebView").d("Set cookie: ${cookie.take(50)}...")
-                        }
-                        cookieManager.flush()
-                    }
-
-                    activity?.runOnUiThread {
-                        onComplete?.invoke(true)
-                    }
-                } else {
-                    Timber.tag("WebView").e("Session refresh failed: $responseCode")
-                    activity?.runOnUiThread {
-                        onComplete?.invoke(false)
-                        if (responseCode == 401) {
-                            // Token is invalid, log out
-                            doLogout()
-                        }
-                    }
-                }
-
-                connection.disconnect()
-            } catch (e: Exception) {
-                Timber.tag("WebView").e(e, "Error refreshing session")
-                activity?.runOnUiThread {
-                    onComplete?.invoke(false)
-                }
-            }
-        }.start()
     }
 
     private fun startRecording() {

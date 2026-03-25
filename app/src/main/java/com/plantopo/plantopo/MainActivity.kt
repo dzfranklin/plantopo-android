@@ -2,8 +2,9 @@ package com.plantopo.plantopo
 
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import timber.log.Timber
 
 class MainActivity : AppCompatActivity() {
     private lateinit var authManager: AuthManager
@@ -26,13 +27,25 @@ class MainActivity : AppCompatActivity() {
             if (uri.scheme == OAuthManager.OAUTH_CALLBACK_SCHEME &&
                 uri.host == OAuthManager.OAUTH_CALLBACK_HOST
             ) {
-                // Extract token from query parameters
-                val token = uri.getQueryParameter("token")
-                if (token != null) {
-                    authManager.saveToken(token)
+                // Extract short-lived initiation token from query parameters (15 min expiry)
+                val initiationToken = uri.getQueryParameter("token")
+                if (initiationToken != null) {
+                    // Exchange immediately for API token and set session cookies
+                    authManager.exchangeInitiationToken(initiationToken) { success ->
+                        runOnUiThread {
+                            if (!success) {
+                                Timber.tag("MainActivity").e("Failed to exchange initiation token")
+                                Toast.makeText(
+                                    this,
+                                    "Login failed. Please try again.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            // The navigation component will automatically show WebViewFragment
+                            // which will now load the authenticated app with cookies already set
+                        }
+                    }
                 }
-                // The navigation component will automatically show WebViewFragment
-                // which will now load the authenticated app
             }
         }
     }
