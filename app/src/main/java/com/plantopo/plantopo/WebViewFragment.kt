@@ -202,7 +202,7 @@ class WebViewFragment : Fragment() {
         }
 
         // Check if there's an active recording and ensure service is running
-        val currentRecording = recordingViewModel.currentRecording.value
+        val currentRecording = recordingViewModel.currentRecordingWithPoints.value
         if (currentRecording != null && currentRecordingServiceId != currentRecording.id) {
             Timber.i("Found active recording ${currentRecording.id} on resume, restarting service")
             startRecordingService(currentRecording.id)

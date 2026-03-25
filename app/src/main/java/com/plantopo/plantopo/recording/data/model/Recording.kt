@@ -18,7 +18,10 @@ data class Recording(
 data class RecordingWithPoints(
     val recording: Recording,
     val points: List<TrackPoint>
-)
+) {
+    val id: Long
+        get() = recording.id
+}
 
 fun RecordingEntity.toDomain() = Recording(
     id = id,

@@ -2,7 +2,6 @@ package com.plantopo.plantopo.recording.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.plantopo.plantopo.recording.data.model.Recording
 import com.plantopo.plantopo.recording.data.model.RecordingWithPoints
 import com.plantopo.plantopo.recording.data.repository.RecordingRepository
 import kotlinx.coroutines.Job
@@ -20,9 +19,6 @@ class RecordingViewModel(
     private val _uiState = MutableStateFlow<RecordingUiState>(RecordingUiState.Idle)
     val uiState: StateFlow<RecordingUiState> = _uiState.asStateFlow()
 
-    private val _currentRecording = MutableStateFlow<Recording?>(null)
-    val currentRecording: StateFlow<Recording?> = _currentRecording.asStateFlow()
-
     private val _currentRecordingWithPoints = MutableStateFlow<RecordingWithPoints?>(null)
     val currentRecordingWithPoints: StateFlow<RecordingWithPoints?> = _currentRecordingWithPoints.asStateFlow()
 
@@ -34,8 +30,8 @@ class RecordingViewModel(
 
     private fun checkForActiveRecording() {
         viewModelScope.launch {
-            val activeRecording = repository.getActiveRecording()
-            _currentRecording.value = activeRecording
+            val activeRecording = repository.getActiveRecordingWithPoints()
+            _currentRecordingWithPoints.value = activeRecording
             if (activeRecording != null) {
                 _uiState.value = RecordingUiState.Active(activeRecording)
                 observeRecording(activeRecording.id)
@@ -52,7 +48,6 @@ class RecordingViewModel(
             ) { recording, points ->
                 recording?.let { RecordingWithPoints(it, points) }
             }.collect { recordingWithPoints ->
-                _currentRecording.value = recordingWithPoints?.recording
                 _currentRecordingWithPoints.value = recordingWithPoints
                 Timber.d("Recording updated: ${recordingWithPoints?.recording?.pointCount} points, ${recordingWithPoints?.points?.size} track points")
             }
@@ -64,8 +59,8 @@ class RecordingViewModel(
             try {
                 _uiState.value = RecordingUiState.Starting
                 val recordingId = repository.startRecording(name)
-                val recording = repository.getActiveRecording()
-                _currentRecording.value = recording
+                val recording = repository.getActiveRecordingWithPoints()
+                _currentRecordingWithPoints.value = recording
                 _uiState.value = RecordingUiState.Active(recording!!)
                 observeRecording(recordingId)
                 Timber.d("Recording started: $recordingId")
@@ -77,14 +72,13 @@ class RecordingViewModel(
     }
 
     fun stopRecording() {
-        val recording = _currentRecording.value ?: return
+        val recording = _currentRecordingWithPoints.value ?: return
         viewModelScope.launch {
             try {
                 _uiState.value = RecordingUiState.Stopping
                 repository.stopRecording(recording.id)
                 recordingObserverJob?.cancel()
                 recordingObserverJob = null
-                _currentRecording.value = null
                 _currentRecordingWithPoints.value = null
                 _uiState.value = RecordingUiState.Stopped(recording.id)
                 Timber.d("Recording stopped: ${recording.id}")
@@ -103,7 +97,7 @@ class RecordingViewModel(
 sealed class RecordingUiState {
     data object Idle : RecordingUiState()
     data object Starting : RecordingUiState()
-    data class Active(val recording: Recording) : RecordingUiState()
+    data class Active(val recording: RecordingWithPoints) : RecordingUiState()
     data object Stopping : RecordingUiState()
     data class Stopped(val recordingId: Long) : RecordingUiState()
     data class Error(val message: String) : RecordingUiState()

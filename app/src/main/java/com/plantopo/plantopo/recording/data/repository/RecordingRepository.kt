@@ -32,6 +32,12 @@ class RecordingRepository(
         return entity.toDomain()
     }
 
+    suspend fun getActiveRecordingWithPoints(): RecordingWithPoints? {
+        val entity = recordingDao.getActiveRecording() ?: return null
+        val points = trackPointDao.getPointsForRecording(entity.id)
+        return RecordingWithPoints(entity.toDomain(), points.map { it.toDomain() })
+    }
+
     // Start a new recording
     suspend fun startRecording(name: String? = null): Long {
         val entity = RecordingEntity(
