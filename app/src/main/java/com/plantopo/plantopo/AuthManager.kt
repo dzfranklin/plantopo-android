@@ -1,13 +1,23 @@
 package com.plantopo.plantopo
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
-import androidx.core.content.edit
 
-class AuthManager(private val context: Context) {
+class AuthManager(
+    private val context: Context,
+    private val baseUrl: String = Config.BASE_URL,
+    httpClient: OkHttpClient? = null
+) : TokenProvider {
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
@@ -27,16 +37,16 @@ class AuthManager(private val context: Context) {
         }
     }
 
-    fun getToken(): String? {
+    override fun getToken(): String? {
         val token = sharedPreferences.getString(KEY_SESSION_TOKEN, null)
         return token
     }
 
     fun clearToken() {
         Timber.i("Clearing authentication token")
-        sharedPreferences.edit()
-            .remove(KEY_SESSION_TOKEN)
-            .apply()
+        sharedPreferences.edit {
+            remove(KEY_SESSION_TOKEN)
+        }
     }
 
     fun isAuthenticated(): Boolean {
@@ -44,60 +54,71 @@ class AuthManager(private val context: Context) {
         return authenticated
     }
 
+    @Serializable
+    private data class NativeSessionResponse(val token: String)
+
+    private val httpClient = httpClient ?: OkHttpClient()
+    private val json = Json { ignoreUnknownKeys = true }
+
+    @Volatile
+    private var _isExchangingToken = false
+
+    val isExchangingToken: Boolean
+        get() = _isExchangingToken
+
     // Exchanges a short-lived OAuth initiation token (15 min expiry) for a long-lived
     // API token and sets up the WebView session cookies.
     // Must be called immediately when receiving the initiation token from OAuth callback.
-    fun exchangeInitiationToken(initiationToken: String, onComplete: (Boolean) -> Unit) {
+    suspend fun exchangeInitiationToken(initiationToken: String): Boolean {
         Timber.i("Exchanging initiation token for API token")
+        _isExchangingToken = true
 
-        Thread {
+        return withContext(Dispatchers.IO) {
             try {
-                val url = java.net.URL("${Config.BASE_URL}/api/v1/native-session")
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.setRequestProperty("Authorization", "Bearer $initiationToken")
-                connection.setRequestProperty("Content-Length", "0")
-                connection.instanceFollowRedirects = false
+                val request = Request.Builder()
+                    .url("$baseUrl/api/v1/native-session")
+                    .post(ByteArray(0).toRequestBody())
+                    .addHeader("Authorization", "Bearer $initiationToken")
+                    .build()
 
-                val responseCode = connection.responseCode
-                Timber.i("Token exchange response: $responseCode")
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string()
 
-                if (responseCode in 200..299) {
+                if (response.isSuccessful && responseBody != null) {
                     // Extract API token from response body
-                    val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(responseBody)
-                    val apiToken = json.getString("token")
+                    val sessionResponse = json.decodeFromString<NativeSessionResponse>(responseBody)
+                    val apiToken = sessionResponse.token
 
                     // Store the API token (not the initiation token)
                     saveToken(apiToken)
                     Timber.i("API token stored successfully")
 
                     // Extract and store session cookies for WebView
-                    val cookies = connection.headerFields["Set-Cookie"]
-                    if (cookies != null) {
+                    val cookies = response.headers("Set-Cookie")
+                    if (cookies.isNotEmpty()) {
                         val cookieManager = android.webkit.CookieManager.getInstance()
                         cookies.forEach { cookie ->
-                            cookieManager.setCookie(Config.BASE_URL, cookie)
+                            cookieManager.setCookie(baseUrl, cookie)
                             Timber.d("Set cookie: ${cookie.take(50)}...")
                         }
                         cookieManager.flush()
                         Timber.i("Session cookies set successfully")
                     }
 
-                    onComplete(true)
+                    _isExchangingToken = false
+                    true
                 } else {
-                    Timber.e("Token exchange failed: $responseCode")
-                    val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                    Timber.e("Error response: $errorBody")
-                    onComplete(false)
+                    Timber.e("Token exchange failed: ${response.code}")
+                    Timber.e("Error response: $responseBody")
+                    _isExchangingToken = false
+                    false
                 }
-
-                connection.disconnect()
             } catch (e: Exception) {
                 Timber.e(e, "Error exchanging initiation token")
-                onComplete(false)
+                _isExchangingToken = false
+                false
             }
-        }.start()
+        }
     }
 
     companion object {

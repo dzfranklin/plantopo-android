@@ -4,6 +4,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class MainActivity : AppCompatActivity() {
@@ -31,18 +33,26 @@ class MainActivity : AppCompatActivity() {
                 val initiationToken = uri.getQueryParameter("token")
                 if (initiationToken != null) {
                     // Exchange immediately for API token and set session cookies
-                    authManager.exchangeInitiationToken(initiationToken) { success ->
-                        runOnUiThread {
-                            if (!success) {
-                                Timber.tag("MainActivity").e("Failed to exchange initiation token")
-                                Toast.makeText(
-                                    this,
-                                    "Login failed. Please try again.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                            // The navigation component will automatically show WebViewFragment
-                            // which will now load the authenticated app with cookies already set
+                    lifecycleScope.launch {
+                        val success = authManager.exchangeInitiationToken(initiationToken)
+
+                        // Notify WebViewFragment that auth exchange completed (success or failure)
+                        // WebViewFragment is inside NavHostFragment, so we need to use the
+                        // NavHostFragment's childFragmentManager
+                        val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)
+                        Timber.tag("MainActivity").i("Sending auth_completed fragment result (success=$success)")
+                        navHostFragment?.childFragmentManager?.setFragmentResult(
+                            "auth_completed",
+                            android.os.Bundle()
+                        )
+
+                        if (!success) {
+                            Timber.tag("MainActivity").e("Failed to exchange initiation token")
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Login failed. Please try again.",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     }
                 }

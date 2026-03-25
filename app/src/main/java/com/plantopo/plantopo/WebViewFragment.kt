@@ -27,6 +27,18 @@ class WebViewFragment : Fragment() {
         if (BuildConfig.DEBUG) {
             WebView.setWebContentsDebuggingEnabled(true)
         }
+
+        // Listen for authentication completion from MainActivity
+        parentFragmentManager.setFragmentResultListener("auth_completed", this) { _, _ ->
+            Timber.i("Auth completed, refreshing fragment view")
+            // Recreate the view to show authenticated WebView
+            parentFragmentManager.beginTransaction()
+                .detach(this)
+                .commit()
+            parentFragmentManager.beginTransaction()
+                .attach(this)
+                .commit()
+        }
     }
 
     override fun onCreateView(
@@ -34,6 +46,12 @@ class WebViewFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        // If token exchange is in progress, show loading view
+        if (authManager.isExchangingToken) {
+            Timber.i("Token exchange in progress, showing loading view")
+            return inflater.inflate(R.layout.fragment_loading, container, false)
+        }
+
         // Only create WebView if authenticated
         if (!authManager.isAuthenticated()) {
             Timber.i("Not authenticated, showing login view")
@@ -137,6 +155,36 @@ class WebViewFragment : Fragment() {
             .commit()
     }
 
+    private fun startRecordingTrack() {
+        Timber.i("Start recording track")
+        // TODO: Implement actual track recording logic
+        // For now, just push updated state
+        pushRecordTrackState()
+    }
+
+    private fun stopRecordingTrack() {
+        Timber.i("Stop recording track")
+        // TODO: Implement actual track recording logic
+        // For now, just push updated state
+        pushRecordTrackState()
+    }
+
+    private fun onRecordTrackReady() {
+        Timber.i("Record track ready callback from web")
+        pushRecordTrackState()
+    }
+
+    private fun pushRecordTrackState() {
+        webView?.let { wv ->
+            // TODO: Replace with actual state from recording service/repository
+            val state = """"{\"isRecording\":false,\"points\":[]}""""
+            wv.post {
+                wv.evaluateJavascript("window.onRecordTrackState?.(JSON.parse($state))", null)
+            }
+            Timber.d("Pushed record track state: $state")
+        }
+    }
+
     @Suppress("unused")
     class WebAppInterface(
         private val fragment: WebViewFragment
@@ -149,6 +197,21 @@ class WebViewFragment : Fragment() {
         @android.webkit.JavascriptInterface
         fun logout() {
             fragment.doLogout()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun startRecordingTrack() {
+            fragment.startRecordingTrack()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun stopRecordingTrack() {
+            fragment.stopRecordingTrack()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun recordTrackReady() {
+            fragment.onRecordTrackReady()
         }
     }
 }
