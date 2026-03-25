@@ -22,9 +22,6 @@ interface TrackPointDao {
     @Query("SELECT COUNT(*) FROM track_points WHERE recordingId = :recordingId")
     suspend fun getPointCount(recordingId: Long): Int
 
-    @Query("SELECT COUNT(*) FROM track_points WHERE recordingId = :recordingId")
-    fun observePointCount(recordingId: Long): Flow<Int>
-
     @Query("DELETE FROM track_points WHERE recordingId = :recordingId")
     suspend fun deletePointsForRecording(recordingId: Long)
 }

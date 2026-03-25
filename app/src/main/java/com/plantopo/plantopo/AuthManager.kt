@@ -96,12 +96,14 @@ class AuthManager(
                     // Extract and store session cookies for WebView
                     val cookies = response.headers("Set-Cookie")
                     if (cookies.isNotEmpty()) {
-                        val cookieManager = android.webkit.CookieManager.getInstance()
-                        cookies.forEachIndexed { index, cookie ->
-                            cookieManager.setCookie(baseUrl, cookie) { success ->
-                                Timber.d("Set cookie ${index + 1}/${cookies.size}: ${cookie.take(50)}... - Success: $success")
-                                if (index == cookies.size - 1) {
-                                    Timber.i("Session cookies set successfully")
+                        withContext(Dispatchers.Main) {
+                            val cookieManager = android.webkit.CookieManager.getInstance()
+                            cookies.forEachIndexed { index, cookie ->
+                                cookieManager.setCookie(baseUrl, cookie) { success ->
+                                    Timber.d("Set cookie ${index + 1}/${cookies.size}: ${cookie.take(50)}... - Success: $success")
+                                    if (index == cookies.size - 1) {
+                                        Timber.i("Session cookies set successfully")
+                                    }
                                 }
                             }
                         }

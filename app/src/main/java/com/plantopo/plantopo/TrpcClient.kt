@@ -50,7 +50,7 @@ class TrpcClient(
     private data class TrpcSuccessResponse(val result: TrpcResult)
 
     @Serializable
-    private data class TrpcResult(val data: TrpcData)
+    private data class TrpcResult(val data: TrpcData? = null)
 
     @Serializable
     private data class TrpcData(val json: JsonElement)
@@ -129,10 +129,18 @@ class TrpcClient(
             val responseBody = response.body?.string()
                 ?: throw TrpcException("Empty response body")
 
+            Timber.d("tRPC response ($procedure): status=${response.code}, body=$responseBody")
+
             if (response.isSuccessful) {
                 // Parse success response
                 val successResponse = json.decodeFromString<TrpcSuccessResponse>(responseBody)
-                json.decodeFromJsonElement(outputSerializer, successResponse.result.data.json)
+                val dataJson = successResponse.result.data?.json
+                    ?: run {
+                        // Handle empty response by attempting to decode empty object
+                        Timber.d("Response has no data field, attempting to decode empty object")
+                        json.parseToJsonElement("{}")
+                    }
+                json.decodeFromJsonElement(outputSerializer, dataJson)
             } else {
                 // Parse error response
                 try {

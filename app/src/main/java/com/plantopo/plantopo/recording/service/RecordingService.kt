@@ -171,7 +171,6 @@ class RecordingService : Service() {
             bearingAccuracy = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && location.hasBearingAccuracy()) {
                 location.bearingAccuracyDegrees
             } else null,
-            provider = location.provider ?: "unknown"
         )
 
         serviceScope.launch {

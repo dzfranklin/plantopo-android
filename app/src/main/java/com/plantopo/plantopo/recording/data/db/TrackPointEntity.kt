@@ -31,5 +31,4 @@ data class TrackPointEntity(
     val speedAccuracy: Float?, // Meters/second (Location.getSpeedAccuracyMetersPerSecond())
     val bearing: Float?, // Degrees
     val bearingAccuracy: Float?, // Degrees (Location.getBearingAccuracyDegrees())
-    val provider: String // "gps", "network", "fused", etc.
 )

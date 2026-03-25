@@ -20,11 +20,10 @@ data class RecordingWithPoints(
     val points: List<TrackPoint>
 )
 
-fun RecordingEntity.toDomain(pointCount: Int = 0) = Recording(
+fun RecordingEntity.toDomain() = Recording(
     id = id,
     name = name,
     startTime = startTime,
     endTime = endTime,
     status = status,
-    pointCount = pointCount
 )

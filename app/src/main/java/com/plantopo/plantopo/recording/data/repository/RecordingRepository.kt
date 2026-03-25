@@ -6,14 +6,14 @@ import com.plantopo.plantopo.recording.data.db.RecordingDao
 import com.plantopo.plantopo.recording.data.db.RecordingEntity
 import com.plantopo.plantopo.recording.data.db.RecordingStatus
 import com.plantopo.plantopo.recording.data.db.TrackPointDao
-import com.plantopo.plantopo.recording.data.db.TrackPointEntity
 import com.plantopo.plantopo.recording.data.model.Recording
+import com.plantopo.plantopo.recording.data.model.RecordingWithPoints
 import com.plantopo.plantopo.recording.data.model.TrackPoint
 import com.plantopo.plantopo.recording.data.model.toDomain
 import com.plantopo.plantopo.recording.data.model.toEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlinx.serialization.Serializable
+import kotlinx.coroutines.flow.map
 import timber.log.Timber
 
 class RecordingRepository(
@@ -21,34 +21,15 @@ class RecordingRepository(
     private val trackPointDao: TrackPointDao,
     private val trpcClient: TrpcClient
 ) {
-    // Observe all recordings with point counts
-    fun observeAllRecordings(): Flow<List<Recording>> {
-        return combine(
-            recordingDao.observeAll(),
-            recordingDao.observeAll()
-        ) { recordings, _ ->
-            recordings.map { entity ->
-                val pointCount = trackPointDao.getPointCount(entity.id)
-                entity.toDomain(pointCount)
-            }
-        }
-    }
-
     // Observe a specific recording
     fun observeRecording(id: Long): Flow<Recording?> {
-        return combine(
-            recordingDao.observeById(id),
-            trackPointDao.observePointCount(id)
-        ) { entity, pointCount ->
-            entity?.toDomain(pointCount)
-        }
+        return recordingDao.observeById(id).map { entity -> entity?.toDomain() }
     }
 
     // Get the active recording
     suspend fun getActiveRecording(): Recording? {
         val entity = recordingDao.getActiveRecording() ?: return null
-        val pointCount = trackPointDao.getPointCount(entity.id)
-        return entity.toDomain(pointCount)
+        return entity.toDomain()
     }
 
     // Start a new recording
@@ -77,11 +58,6 @@ class RecordingRepository(
         trackPointDao.insert(point.toEntity(recordingId))
     }
 
-    // Get all points for a recording
-    suspend fun getTrackPoints(recordingId: Long): List<TrackPoint> {
-        return trackPointDao.getPointsForRecording(recordingId).map { it.toDomain() }
-    }
-
     // Observe points for a recording
     fun observeTrackPoints(recordingId: Long): Flow<List<TrackPoint>> {
         return combine(
@@ -100,18 +76,10 @@ class RecordingRepository(
             )
             val points = trackPointDao.getPointsForRecording(id)
 
-            val payload = UploadRecordingRequest(
-                name = recording.name,
-                startTime = recording.startTime,
-                endTime = recording.endTime ?: System.currentTimeMillis(),
-                points = points.map { it.toDomain() }
-            )
+            val payload = RecordingWithPoints(recording.toDomain(), points.map { it.toDomain() });
 
             // Call the tRPC endpoint to upload the recording
-            trpcClient.mutation<UploadRecordingRequest, UploadRecordingResponse>(
-                "track.upload",
-                payload
-            )
+            trpcClient.mutation<RecordingWithPoints, Unit>("track.upload", payload)
 
             // Mark as synced
             recordingDao.update(
@@ -144,10 +112,7 @@ class RecordingRepository(
 
     // Get unsynced recordings
     suspend fun getUnsyncedRecordings(): List<Recording> {
-        return recordingDao.getUnsyncedRecordings().map { entity ->
-            val pointCount = trackPointDao.getPointCount(entity.id)
-            entity.toDomain(pointCount)
-        }
+        return recordingDao.getUnsyncedRecordings().map(RecordingEntity::toDomain)
     }
 
     // Delete a recording
@@ -155,16 +120,3 @@ class RecordingRepository(
         recordingDao.deleteById(id)
     }
 }
-
-@Serializable
-data class UploadRecordingRequest(
-    val name: String?,
-    val startTime: Long,
-    val endTime: Long,
-    val points: List<TrackPoint>
-)
-
-@Serializable
-data class UploadRecordingResponse(
-    val id: String
-)

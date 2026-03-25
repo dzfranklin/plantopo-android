@@ -15,7 +15,6 @@ data class TrackPoint(
     val speedAccuracy: Float?,
     val bearing: Float?,
     val bearingAccuracy: Float?,
-    val provider: String
 )
 
 fun TrackPointEntity.toDomain() = TrackPoint(
@@ -29,7 +28,6 @@ fun TrackPointEntity.toDomain() = TrackPoint(
     speedAccuracy = speedAccuracy,
     bearing = bearing,
     bearingAccuracy = bearingAccuracy,
-    provider = provider
 )
 
 fun TrackPoint.toEntity(recordingId: Long) = TrackPointEntity(
@@ -44,5 +42,4 @@ fun TrackPoint.toEntity(recordingId: Long) = TrackPointEntity(
     speedAccuracy = speedAccuracy,
     bearing = bearing,
     bearingAccuracy = bearingAccuracy,
-    provider = provider
 )
