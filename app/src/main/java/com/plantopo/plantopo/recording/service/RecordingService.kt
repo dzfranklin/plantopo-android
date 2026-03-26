@@ -132,6 +132,7 @@ class RecordingService : Service() {
             1000L // 1 second interval for maximum detail
         ).apply {
             setMinUpdateIntervalMillis(500L) // Accept updates as fast as 0.5 seconds
+            setIntervalMillis(1000L) // Update every 1 second
             setMaxUpdateDelayMillis(15000L) // Batch delivery max 15 seconds
             setMinUpdateDistanceMeters(0f) // Capture all points, no distance filter
             setWaitForAccurateLocation(true) // Wait for accurate location
