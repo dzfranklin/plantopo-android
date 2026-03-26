@@ -38,7 +38,7 @@ class WebViewFragment : Fragment() {
     private var webView: WebView? = null
     private lateinit var authManager: AuthManager
     private lateinit var oauthManager: OAuthManager
-    private var currentRecordingServiceId: Long? = null
+    private var currentRecordingServiceId: String? = null
 
     private val recordingViewModel: RecordingViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -300,7 +300,7 @@ class WebViewFragment : Fragment() {
         }
     }
 
-    private fun startRecordingService(recordingId: Long) {
+    private fun startRecordingService(recordingId: String) {
         val intent = Intent(requireContext(), RecordingService::class.java).apply {
             action = RecordingService.ACTION_START_RECORDING
             putExtra(RecordingService.EXTRA_RECORDING_ID, recordingId)

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
+import java.util.UUID
 
 class RecordingRepository(
     private val recordingDao: RecordingDao,
@@ -22,7 +23,7 @@ class RecordingRepository(
     private val trpcClient: TrpcClient
 ) {
     // Observe a specific recording
-    fun observeRecording(id: Long): Flow<RecordingMeta?> {
+    fun observeRecording(id: String): Flow<RecordingMeta?> {
         return recordingDao.observeById(id).map { entity -> entity?.toDomain() }
     }
 
@@ -39,17 +40,20 @@ class RecordingRepository(
     }
 
     // Start a new recording
-    suspend fun startRecording(name: String? = null): Long {
+    suspend fun startRecording(name: String? = null): String {
+        val id = UUID.randomUUID().toString()
         val entity = RecordingEntity(
+            id = id,
             name = name,
             startTime = System.currentTimeMillis(),
             status = RecordingStatus.RECORDING
         )
-        return recordingDao.insert(entity)
+        recordingDao.insert(entity)
+        return id
     }
 
     // Stop a recording
-    suspend fun stopRecording(id: Long) {
+    suspend fun stopRecording(id: String) {
         val entity = recordingDao.getById(id) ?: return
         recordingDao.update(
             entity.copy(
@@ -60,12 +64,12 @@ class RecordingRepository(
     }
 
     // Add a track point
-    suspend fun addTrackPoint(recordingId: Long, point: TrackPoint) {
+    suspend fun addTrackPoint(recordingId: String, point: TrackPoint) {
         trackPointDao.insert(point.toEntity(recordingId))
     }
 
     // Observe points for a recording
-    fun observeTrackPoints(recordingId: Long): Flow<List<TrackPoint>> {
+    fun observeTrackPoints(recordingId: String): Flow<List<TrackPoint>> {
         return combine(
             trackPointDao.observePointsForRecording(recordingId),
             trackPointDao.observePointsForRecording(recordingId)
@@ -75,7 +79,7 @@ class RecordingRepository(
     }
 
     // Sync a recording to the server
-    suspend fun syncRecording(id: Long): Result<Unit> {
+    suspend fun syncRecording(id: String): Result<Unit> {
         return try {
             val recording = recordingDao.getById(id) ?: return Result.failure(
                 IllegalArgumentException("Recording not found")
@@ -121,7 +125,7 @@ class RecordingRepository(
     }
 
     // Delete a recording
-    suspend fun deleteRecording(id: Long) {
+    suspend fun deleteRecording(id: String) {
         recordingDao.deleteById(id)
     }
 }

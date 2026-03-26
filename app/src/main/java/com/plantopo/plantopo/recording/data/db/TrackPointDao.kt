@@ -14,14 +14,14 @@ interface TrackPointDao {
     suspend fun insertAll(points: List<TrackPointEntity>)
 
     @Query("SELECT * FROM track_points WHERE recordingId = :recordingId ORDER BY timestamp ASC")
-    suspend fun getPointsForRecording(recordingId: Long): List<TrackPointEntity>
+    suspend fun getPointsForRecording(recordingId: String): List<TrackPointEntity>
 
     @Query("SELECT * FROM track_points WHERE recordingId = :recordingId ORDER BY timestamp ASC")
-    fun observePointsForRecording(recordingId: Long): Flow<List<TrackPointEntity>>
+    fun observePointsForRecording(recordingId: String): Flow<List<TrackPointEntity>>
 
     @Query("SELECT COUNT(*) FROM track_points WHERE recordingId = :recordingId")
-    suspend fun getPointCount(recordingId: Long): Int
+    suspend fun getPointCount(recordingId: String): Int
 
     @Query("DELETE FROM track_points WHERE recordingId = :recordingId")
-    suspend fun deletePointsForRecording(recordingId: Long)
+    suspend fun deletePointsForRecording(recordingId: String)
 }

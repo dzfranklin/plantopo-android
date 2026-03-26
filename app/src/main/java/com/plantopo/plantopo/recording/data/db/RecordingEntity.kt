@@ -6,8 +6,8 @@ import kotlinx.serialization.Serializable
 
 @Entity(tableName = "recordings")
 data class RecordingEntity(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
+    @PrimaryKey
+    val id: String,
     val name: String? = null,
     val startTime: Long, // Epoch milliseconds
     val endTime: Long? = null, // Null if still recording

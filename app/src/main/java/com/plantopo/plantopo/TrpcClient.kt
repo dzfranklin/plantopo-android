@@ -44,9 +44,6 @@ class TrpcClient(
     }
 
     @Serializable
-    private data class TrpcRequest(val json: JsonElement)
-
-    @Serializable
     private data class TrpcSuccessResponse(val result: TrpcResult)
 
     @Serializable
@@ -109,15 +106,13 @@ class TrpcClient(
             ?: throw TrpcException("Not authenticated")
 
         // Encode input
-        val inputJson = json.encodeToJsonElement(inputSerializer, input)
-        val requestBody = TrpcRequest(inputJson)
-        val requestBodyJson = json.encodeToString(TrpcRequest.serializer(), requestBody)
+        val inputJson = json.encodeToString(inputSerializer, input)
 
         // Build request
         val url = "$baseUrl/api/v1/trpc/$procedure"
         val request = Request.Builder()
             .url(url)
-            .post(requestBodyJson.toRequestBody("application/json".toMediaType()))
+            .post(inputJson.toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer $token")
             .build()
 

@@ -12,13 +12,13 @@ data class Recording(
     val meta: RecordingMeta,
     val points: List<TrackPoint>
 ) {
-    val id: Long
+    val id: String
         get() = meta.id
 }
 
 @Serializable
 private data class RecordingSurrogate(
-    val id: Long,
+    val id: String,
     val name: String?,
     val startTime: Long,
     val endTime: Long?,

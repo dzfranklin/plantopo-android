@@ -39,7 +39,7 @@ class RecordingViewModel(
         }
     }
 
-    private fun observeRecording(recordingId: Long) {
+    private fun observeRecording(recordingId: String) {
         recordingObserverJob?.cancel()
         recordingObserverJob = viewModelScope.launch {
             combine(
@@ -99,6 +99,6 @@ sealed class RecordingUiState {
     data object Starting : RecordingUiState()
     data class Active(val recording: Recording) : RecordingUiState()
     data object Stopping : RecordingUiState()
-    data class Stopped(val recordingId: Long) : RecordingUiState()
+    data class Stopped(val recordingId: String) : RecordingUiState()
     data class Error(val message: String) : RecordingUiState()
 }

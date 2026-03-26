@@ -20,7 +20,7 @@ import androidx.room.PrimaryKey
 data class TrackPointEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    val recordingId: Long,
+    val recordingId: String,
     val timestamp: Long, // Epoch milliseconds
     val latitude: Double,
     val longitude: Double,

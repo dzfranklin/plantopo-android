@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class RecordingMeta(
-    val id: Long,
+    val id: String,
     val name: String?,
     val startTime: Long,
     val endTime: Long?,

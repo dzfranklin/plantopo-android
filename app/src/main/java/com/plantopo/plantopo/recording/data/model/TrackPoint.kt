@@ -30,7 +30,7 @@ fun TrackPointEntity.toDomain() = TrackPoint(
     bearingAccuracy = bearingAccuracy,
 )
 
-fun TrackPoint.toEntity(recordingId: Long) = TrackPointEntity(
+fun TrackPoint.toEntity(recordingId: String) = TrackPointEntity(
     recordingId = recordingId,
     timestamp = timestamp,
     latitude = latitude,

@@ -9,16 +9,16 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface RecordingDao {
     @Insert
-    suspend fun insert(recording: RecordingEntity): Long
+    suspend fun insert(recording: RecordingEntity)
 
     @Update
     suspend fun update(recording: RecordingEntity)
 
     @Query("SELECT * FROM recordings WHERE id = :id")
-    suspend fun getById(id: Long): RecordingEntity?
+    suspend fun getById(id: String): RecordingEntity?
 
     @Query("SELECT * FROM recordings WHERE id = :id")
-    fun observeById(id: Long): Flow<RecordingEntity?>
+    fun observeById(id: String): Flow<RecordingEntity?>
 
     @Query("SELECT * FROM recordings ORDER BY startTime DESC")
     fun observeAll(): Flow<List<RecordingEntity>>
@@ -33,5 +33,5 @@ interface RecordingDao {
     suspend fun getUnsyncedRecordings(): List<RecordingEntity>
 
     @Query("DELETE FROM recordings WHERE id = :id")
-    suspend fun deleteById(id: Long)
+    suspend fun deleteById(id: String)
 }

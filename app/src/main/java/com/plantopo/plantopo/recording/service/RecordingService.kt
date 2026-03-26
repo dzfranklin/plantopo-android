@@ -38,7 +38,7 @@ class RecordingService : Service() {
     private lateinit var repository: RecordingRepository
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private var recordingId: Long? = null
+    private var recordingId: String? = null
     private var pointCount = 0
 
     private val locationCallback = object : LocationCallback() {
@@ -69,8 +69,8 @@ class RecordingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_RECORDING -> {
-                val id = intent.getLongExtra(EXTRA_RECORDING_ID, -1)
-                if (id != -1L) {
+                val id = intent.getStringExtra(EXTRA_RECORDING_ID)
+                if (id != null) {
                     startRecording(id)
                 }
             }
@@ -97,7 +97,7 @@ class RecordingService : Service() {
         return START_STICKY
     }
 
-    private fun startRecording(id: Long) {
+    private fun startRecording(id: String) {
         recordingId = id
         pointCount = 0
 
