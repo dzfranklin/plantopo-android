@@ -121,8 +121,7 @@ class TrpcClient(
         // Execute request
         return try {
             val response = httpClient.newCall(request).execute()
-            val responseBody = response.body?.string()
-                ?: throw TrpcException("Empty response body")
+            val responseBody = response.body.string()
 
             Timber.d("tRPC response ($procedure): status=${response.code}, body=$responseBody")
 
