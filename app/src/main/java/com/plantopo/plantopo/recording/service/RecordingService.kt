@@ -11,11 +11,9 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Build
 import android.os.IBinder
-import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
@@ -40,14 +38,7 @@ class RecordingService : Service() {
 
     private var recordingId: String? = null
     private var pointCount = 0
-
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            result.lastLocation?.let { location ->
-                handleLocationUpdate(location)
-            }
-        }
-    }
+    private var locationPendingIntent: PendingIntent? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -76,6 +67,14 @@ class RecordingService : Service() {
             }
             ACTION_STOP_RECORDING -> {
                 stopRecording()
+            }
+            ACTION_PROCESS_LOCATION -> {
+                val locationResult = intent.getParcelableExtra<LocationResult>(
+                    LocationUpdateReceiver.EXTRA_LOCATION_RESULT
+                )
+                locationResult?.locations?.forEach { location ->
+                    handleLocationUpdate(location)
+                }
             }
             else -> {
                 // Service was restarted by system without intent
@@ -132,23 +131,36 @@ class RecordingService : Service() {
             1000L // 1 second interval for maximum detail
         ).apply {
             setMinUpdateIntervalMillis(500L) // Accept updates as fast as 0.5 seconds
-            setIntervalMillis(1000L) // Update every 1 second
             setMaxUpdateDelayMillis(15000L) // Batch delivery max 15 seconds
             setMinUpdateDistanceMeters(0f) // Capture all points, no distance filter
             setWaitForAccurateLocation(true) // Wait for accurate location
         }.build()
 
-        fusedLocationClient.requestLocationUpdates(
-            locationRequest,
-            locationCallback,
-            Looper.getMainLooper()
+        // Create PendingIntent for location updates
+        val intent = Intent(this, LocationUpdateReceiver::class.java).apply {
+            action = LocationUpdateReceiver.ACTION_LOCATION_UPDATE
+        }
+        locationPendingIntent = PendingIntent.getBroadcast(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
 
-        Timber.d("Location updates started with HIGH_ACCURACY priority")
+        fusedLocationClient.requestLocationUpdates(
+            locationRequest,
+            locationPendingIntent!!
+        )
+
+        Timber.d("Location updates started with HIGH_ACCURACY priority using PendingIntent")
     }
 
     private fun stopLocationUpdates() {
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        locationPendingIntent?.let {
+            fusedLocationClient.removeLocationUpdates(it)
+            it.cancel()
+            locationPendingIntent = null
+        }
         Timber.d("Location updates stopped")
     }
 
@@ -189,7 +201,7 @@ class RecordingService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Recording",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Track recording in progress"
                 setShowBadge(false)
@@ -218,6 +230,8 @@ class RecordingService : Service() {
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
     }
 
@@ -232,6 +246,7 @@ class RecordingService : Service() {
     companion object {
         const val ACTION_START_RECORDING = "com.plantopo.plantopo.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.plantopo.plantopo.STOP_RECORDING"
+        const val ACTION_PROCESS_LOCATION = "com.plantopo.plantopo.PROCESS_LOCATION"
         const val EXTRA_RECORDING_ID = "recording_id"
 
         private const val CHANNEL_ID = "recording_channel"
