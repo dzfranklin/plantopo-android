@@ -151,6 +151,7 @@ class WebViewFragment : Fragment() {
                 javaScriptEnabled = true
                 domStorageEnabled = true
                 userAgentString = "PlanTopoNative $userAgentString"
+                setGeolocationEnabled(true)
             }
 
             // Add JavaScript interface for Android-WebView communication
@@ -162,6 +163,17 @@ class WebViewFragment : Fragment() {
             webViewClient = PlanTopoWebViewClient()
 
             webChromeClient = object : WebChromeClient() {
+                // Intercept geolocation permission requests and auto-grant them
+                // This prevents double permission popups (native + WebView)
+                override fun onGeolocationPermissionsShowPrompt(
+                    origin: String,
+                    callback: android.webkit.GeolocationPermissions.Callback
+                ) {
+                    // Auto-grant permission to the WebView without showing a popup
+                    // The native app already handles location permissions
+                    callback.invoke(origin, true, false)
+                }
+
                 override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
                     val level = when (consoleMessage.messageLevel()) {
                         ConsoleMessage.MessageLevel.ERROR -> Log.ERROR
