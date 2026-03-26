@@ -84,8 +84,7 @@ class RecordingRepository(
 
             val payload = Recording(recording.toDomain(), points.map { it.toDomain() });
 
-            // Call the tRPC endpoint to upload the recording
-            trpcClient.mutation<Recording, Unit>("track.upload", payload)
+            trpcClient.mutation<Recording, Unit>("track.uploadRecordedTrack", payload)
 
             // Mark as synced
             recordingDao.update(
