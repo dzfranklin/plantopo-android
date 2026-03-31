@@ -8,8 +8,8 @@ import androidx.fragment.app.Fragment
 
 class OAuthManager(private val context: Context) {
 
-    fun launchOAuthFlow(fragment: Fragment) {
-        val loginUrl = "${Config.BASE_URL}/login?returnTo=plantopo://oauth-callback"
+    fun launchOAuthFlow(fragment: Fragment, path: String = "/login") {
+        val loginUrl = "${Config.BASE_URL}${path}?returnTo=plantopo://oauth-callback"
 
         val customTabsIntent = CustomTabsIntent.Builder()
             .setShowTitle(true)

@@ -129,10 +129,13 @@ class WebViewFragment : Fragment() {
         // Only create WebView if authenticated
         if (!authManager.isAuthenticated()) {
             Timber.i("Not authenticated, showing login view")
-            // Show login screen with button
+            // Show login screen with buttons
             val loginView = inflater.inflate(R.layout.fragment_login, container, false)
-            loginView.findViewById<Button>(R.id.loginButton).setOnClickListener {
-                oauthManager.launchOAuthFlow(this)
+            loginView.findViewById<Button>(R.id.signInButton).setOnClickListener {
+                oauthManager.launchOAuthFlow(this, "/login")
+            }
+            loginView.findViewById<Button>(R.id.signUpButton).setOnClickListener {
+                oauthManager.launchOAuthFlow(this, "/signup")
             }
             return loginView
         }

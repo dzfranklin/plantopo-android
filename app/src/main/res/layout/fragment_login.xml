@@ -15,10 +15,19 @@
         android:layout_marginBottom="16dp" />
 
     <Button
-        android:id="@+id/loginButton"
+        android:id="@+id/signInButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:paddingStart="48dp"
         android:paddingEnd="48dp"
-        android:text="Sign in / register" />
+        android:text="@string/sign_in"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/signUpButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingStart="48dp"
+        android:paddingEnd="48dp"
+        android:text="@string/sign_up" />
 </LinearLayout>
