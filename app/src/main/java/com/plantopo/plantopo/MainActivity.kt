@@ -26,7 +26,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleOAuthCallback(intent: Intent?) {
         intent?.data?.let { uri ->
-            if (uri.scheme == OAuthManager.OAUTH_CALLBACK_SCHEME &&
+            if (uri.scheme == BuildConfig.OAUTH_SCHEME &&
                 uri.host == OAuthManager.OAUTH_CALLBACK_HOST
             ) {
                 // Extract short-lived initiation token from query parameters (15 min expiry)

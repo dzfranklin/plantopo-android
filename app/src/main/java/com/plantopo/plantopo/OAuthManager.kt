@@ -9,7 +9,8 @@ import androidx.fragment.app.Fragment
 class OAuthManager(private val context: Context) {
 
     fun launchOAuthFlow(fragment: Fragment, path: String = "/login") {
-        val loginUrl = "${Config.BASE_URL}${path}?returnTo=plantopo://oauth-callback"
+        val callbackUri = "${BuildConfig.OAUTH_SCHEME}://$OAUTH_CALLBACK_HOST"
+        val loginUrl = "${Config.BASE_URL}${path}?returnTo=$callbackUri"
 
         val customTabsIntent = CustomTabsIntent.Builder()
             .setShowTitle(true)
@@ -19,11 +20,10 @@ class OAuthManager(private val context: Context) {
     }
 
     companion object {
-        const val OAUTH_CALLBACK_SCHEME = "plantopo"
         const val OAUTH_CALLBACK_HOST = "oauth-callback"
 
         fun getCallbackUri(): Uri {
-            return Uri.parse("$OAUTH_CALLBACK_SCHEME://$OAUTH_CALLBACK_HOST")
+            return Uri.parse("${BuildConfig.OAUTH_SCHEME}://$OAUTH_CALLBACK_HOST")
         }
     }
 }

@@ -26,13 +26,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // Uses the default debug keystore automatically
+        }
+    }
+
     buildTypes {
         debug {
+            applicationIdSuffix = ".debug"
             buildConfigField("String", "BASE_URL", "\"http://localhost:4000\"")
+            buildConfigField("String", "OAUTH_SCHEME", "\"plantopo-debug\"")
+            manifestPlaceholders["oauthScheme"] = "plantopo-debug"
         }
         release {
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             buildConfigField("String", "BASE_URL", "\"https://plantopo.com\"")
+            buildConfigField("String", "OAUTH_SCHEME", "\"plantopo\"")
+            manifestPlaceholders["oauthScheme"] = "plantopo"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

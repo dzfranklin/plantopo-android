@@ -45,7 +45,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data
-                    android:scheme="plantopo"
+                    android:scheme="${oauthScheme}"
                     android:host="oauth-callback" />
             </intent-filter>
         </activity>
