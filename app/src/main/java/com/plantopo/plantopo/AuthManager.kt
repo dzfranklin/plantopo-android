@@ -92,11 +92,11 @@ class AuthManager(
                             cookies.forEachIndexed { index, cookie ->
                                 cookieManager.setCookie(baseUrl, cookie) { success ->
                                     Timber.d("Set cookie ${index + 1}/${cookies.size}: ${cookie.take(50)}... - Success: $success")
-                                    if (index == cookies.size - 1) {
-                                        Timber.i("Session cookies set successfully")
-                                    }
                                 }
                             }
+                            // Force write to disk after all cookies are set
+                            cookieManager.flush()
+                            Timber.i("Session cookies set successfully")
                         }
                     }
 
@@ -111,6 +111,57 @@ class AuthManager(
             } catch (e: Exception) {
                 Timber.e(e, "Error exchanging initiation token")
                 _isExchangingToken = false
+                false
+            }
+        }
+    }
+
+    suspend fun refreshWebViewSession(): Boolean {
+        val apiToken = getToken()
+        if (apiToken == null) {
+            Timber.e("Cannot refresh WebView session: no API token")
+            return false
+        }
+
+        Timber.i("Refreshing WebView session cookies")
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder()
+                    .url("$baseUrl/api/v1/refresh-native-session")
+                    .post(ByteArray(0).toRequestBody())
+                    .addHeader("Authorization", "Bearer $apiToken")
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+
+                if (response.isSuccessful) {
+                    val cookies = response.headers("Set-Cookie")
+                    if (cookies.isNotEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            val cookieManager = android.webkit.CookieManager.getInstance()
+                            cookies.forEachIndexed { index, cookie ->
+                                cookieManager.setCookie(baseUrl, cookie) { success ->
+                                    Timber.d("Refresh: Set cookie ${index + 1}/${cookies.size}: Success=$success")
+                                }
+                            }
+                            cookieManager.flush()
+                        }
+                        true
+                    } else {
+                        Timber.w("Refresh successful but no cookies returned")
+                        false
+                    }
+                } else {
+                    Timber.e("WebView session refresh failed: ${response.code}")
+                    if (response.code == 401) {
+                        Timber.e("API token appears expired")
+                        clearToken()
+                    }
+                    false
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error refreshing WebView session")
                 false
             }
         }

@@ -11,6 +11,7 @@ import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -40,6 +41,9 @@ class WebViewFragment : Fragment() {
     private lateinit var oauthManager: OAuthManager
     private var currentRecordingServiceId: String? = null
     private var webViewState: Bundle? = null
+    private var isReauthenticating = false
+    private var reauthView: View? = null
+    private var skipStateRestore = false  // Flag to skip state restore after reauth
 
     private val recordingViewModel: RecordingViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -84,6 +88,10 @@ class WebViewFragment : Fragment() {
             WebView.setWebContentsDebuggingEnabled(true)
         }
 
+        // Configure CookieManager for better persistence
+        val cookieManager = android.webkit.CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+
         // Listen for authentication completion from MainActivity
         parentFragmentManager.setFragmentResultListener("auth_completed", this) { _, _ ->
             Timber.i("Auth completed, refreshing fragment view")
@@ -121,6 +129,14 @@ class WebViewFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        // If re-authentication is in progress, show reauthorizing view
+        if (isReauthenticating) {
+            Timber.i("Re-authentication in progress, showing reauthorizing view")
+            val view = inflater.inflate(R.layout.fragment_reauthorizing, container, false)
+            reauthView = view
+            return view
+        }
+
         // If token exchange is in progress, show loading view
         if (authManager.isExchangingToken) {
             Timber.i("Token exchange in progress, showing loading view")
@@ -154,6 +170,8 @@ class WebViewFragment : Fragment() {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
+                databaseEnabled = true  // Enable database storage
+                cacheMode = android.webkit.WebSettings.LOAD_DEFAULT  // Use cache when available
                 userAgentString = "PlanTopoNative $userAgentString"
                 setGeolocationEnabled(true)
             }
@@ -196,11 +214,17 @@ class WebViewFragment : Fragment() {
 
             // Session cookies already set by AuthManager during OAuth callback
             // Restore state if available, otherwise load the app directly
-            if (webViewState != null) {
+            // Skip restore after re-authentication to get fresh session
+            if (webViewState != null && !skipStateRestore) {
                 Timber.i("Restoring WebView state")
                 restoreState(webViewState!!)
             } else {
-                Timber.i("Loading ${Config.BASE_URL}")
+                if (skipStateRestore) {
+                    Timber.i("Skipping state restore after re-auth, loading fresh: ${Config.BASE_URL}")
+                    skipStateRestore = false  // Reset flag
+                } else {
+                    Timber.i("Loading ${Config.BASE_URL}")
+                }
                 loadUrl(Config.BASE_URL)
             }
         }
@@ -215,7 +239,8 @@ class WebViewFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         // If user just completed OAuth and we don't have a WebView yet, recreate the view
-        if (authManager.isAuthenticated() && webView == null) {
+        // Don't do this if we're in the middle of reauthorizing
+        if (authManager.isAuthenticated() && webView == null && !isReauthenticating) {
             Timber.i("onResume: just completed oauth, no webview yet")
             // Trigger view recreation by replacing fragment
             parentFragmentManager.beginTransaction()
@@ -274,6 +299,94 @@ class WebViewFragment : Fragment() {
         parentFragmentManager.beginTransaction()
             .attach(this)
             .commit()
+    }
+
+    private fun onReportUnauthorized() {
+        // JavaScript bridge calls come from JavaBridge thread, switch to main thread
+        activity?.runOnUiThread {
+            Timber.w("WebView reported unauthorized error")
+
+            // Prevent concurrent re-authentication attempts
+            if (isReauthenticating) {
+                Timber.d("Re-authentication already in progress")
+                return@runOnUiThread
+            }
+
+            // Check if we have a native token to use for re-auth
+            if (!authManager.isAuthenticated()) {
+                Timber.i("No native token available, logging out")
+                doLogout()
+                return@runOnUiThread
+            }
+
+            // Set flag - frontend is in unusable state, we must respond
+            Timber.i("Session desync detected, starting re-authentication")
+            isReauthenticating = true
+
+            // Stop the WebView to prevent errors during teardown
+            webView?.stopLoading()
+
+            // Recreate fragment ONCE to show reauthorizing screen
+            parentFragmentManager.beginTransaction()
+                .detach(this)
+                .commit()
+            parentFragmentManager.beginTransaction()
+                .attach(this)
+                .commit()
+
+            // Start re-authentication in background
+            lifecycleScope.launch {
+                attemptReauthentication()
+            }
+        }
+    }
+
+    private suspend fun attemptReauthentication() {
+        Timber.i("Attempting re-authentication")
+        showReauthError(null) // Clear any previous error
+
+        val success = authManager.refreshWebViewSession()
+
+        if (success) {
+            Timber.i("Re-authentication successful")
+            // Clear flag and set skip restore flag for fresh load
+            isReauthenticating = false
+            skipStateRestore = true
+            // Recreate fragment to show WebView
+            parentFragmentManager.beginTransaction()
+                .detach(this)
+                .commit()
+            parentFragmentManager.beginTransaction()
+                .attach(this)
+                .commit()
+        } else {
+            Timber.e("Re-authentication failed")
+            if (!authManager.isAuthenticated()) {
+                // Token was invalid/expired, show login
+                isReauthenticating = false
+                doLogout()
+            } else {
+                // Network error or endpoint not ready - show error and retry
+                Timber.w("Re-auth failed but token still valid - will retry")
+                showReauthError("Connection error, retrying...")
+
+                // Wait a bit and retry automatically
+                kotlinx.coroutines.delay(3000)
+                attemptReauthentication()
+            }
+        }
+    }
+
+    private fun showReauthError(message: String?) {
+        reauthView?.let { view ->
+            val errorText = view.findViewById<TextView>(R.id.errorText)
+            if (message != null) {
+                errorText?.text = message
+                errorText?.visibility = View.VISIBLE
+            } else {
+                errorText?.visibility = View.GONE
+            }
+        }
     }
 
     private fun startRecordingTrack() {
@@ -391,6 +504,11 @@ class WebViewFragment : Fragment() {
         @android.webkit.JavascriptInterface
         fun recordTrackReady() {
             fragment.onRecordTrackReady()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun reportUnauthorized() {
+            fragment.onReportUnauthorized()
         }
     }
 
