@@ -39,6 +39,7 @@ class WebViewFragment : Fragment() {
     private lateinit var authManager: AuthManager
     private lateinit var oauthManager: OAuthManager
     private var currentRecordingServiceId: String? = null
+    private var webViewState: Bundle? = null
 
     private val recordingViewModel: RecordingViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -194,9 +195,14 @@ class WebViewFragment : Fragment() {
             }
 
             // Session cookies already set by AuthManager during OAuth callback
-            // Just load the app directly
-            Timber.i("Loading ${Config.BASE_URL}")
-            loadUrl(Config.BASE_URL)
+            // Restore state if available, otherwise load the app directly
+            if (webViewState != null) {
+                Timber.i("Restoring WebView state")
+                restoreState(webViewState!!)
+            } else {
+                Timber.i("Loading ${Config.BASE_URL}")
+                loadUrl(Config.BASE_URL)
+            }
         }
 
         // Add WebView to container
@@ -232,7 +238,26 @@ class WebViewFragment : Fragment() {
         // refreshes the session when it's used, and it has a 1 year expiry
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        webView?.let {
+            if (webViewState == null) {
+                webViewState = Bundle()
+            }
+            it.saveState(webViewState!!)
+            Timber.i("WebView state saved")
+        }
+    }
+
     override fun onDestroyView() {
+        // Save state before destroying
+        webView?.let {
+            if (webViewState == null) {
+                webViewState = Bundle()
+            }
+            it.saveState(webViewState!!)
+            Timber.i("WebView state saved on destroy")
+        }
         super.onDestroyView()
         webView?.destroy()
         webView = null
