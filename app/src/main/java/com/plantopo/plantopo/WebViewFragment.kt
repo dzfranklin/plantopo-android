@@ -301,6 +301,14 @@ class WebViewFragment : Fragment() {
             .commit()
     }
 
+    private fun openDebugLog() {
+        // JavaScript bridge calls come from JavaBridge thread, switch to main thread
+        activity?.runOnUiThread {
+            val intent = android.content.Intent(activity, DebugLogActivity::class.java)
+            startActivity(intent)
+        }
+    }
+
     private fun onReportUnauthorized() {
         // JavaScript bridge calls come from JavaBridge thread, switch to main thread
         activity?.runOnUiThread {
@@ -509,6 +517,11 @@ class WebViewFragment : Fragment() {
         @android.webkit.JavascriptInterface
         fun reportUnauthorized() {
             fragment.onReportUnauthorized()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun openNativeDebug() {
+            fragment.openDebugLog()
         }
     }
 

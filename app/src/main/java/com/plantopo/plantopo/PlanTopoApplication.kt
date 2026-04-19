@@ -9,6 +9,7 @@ class PlanTopoApplication : Application() {
 
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
+            Timber.plant(DebugLogBuffer.BufferingTree())
         }
     }
 }

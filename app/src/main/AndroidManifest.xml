@@ -50,6 +50,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".DebugLogActivity"
+            android:exported="false"
+            android:label="Debug Logs"
+            android:theme="@style/Theme.PlanTopo" />
+
         <!-- Recording service for GPS tracking -->
         <service
             android:name=".recording.service.RecordingService"
