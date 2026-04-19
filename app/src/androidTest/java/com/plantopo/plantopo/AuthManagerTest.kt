@@ -32,7 +32,7 @@ class AuthManagerTest {
 
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
         authManager = AuthManager(context, baseUrl)
-        authManager.clearToken()
+        authManager.logout()
 
         // Clear cookies
         CookieManager.getInstance().removeAllCookies(null)
@@ -41,7 +41,7 @@ class AuthManagerTest {
 
     @After
     fun teardown() {
-        authManager.clearToken()
+        authManager.logout()
         mockWebServer.shutdown()
     }
 
@@ -51,7 +51,7 @@ class AuthManagerTest {
         mockWebServer.enqueue(
             MockResponse()
                 .setResponseCode(200)
-                .setBody("""{"token": "api-token-123"}""")
+                .setBody("""{"token": "api-token-123", "user": {"id": "user-123", "email": "test@example.com"}}""")
                 .addHeader("Set-Cookie", "better-auth.session_token=cookie123; Path=/; HttpOnly")
         )
 
@@ -62,6 +62,10 @@ class AuthManagerTest {
         assertThat(success).isTrue()
         assertThat(authManager.getToken()).isEqualTo("api-token-123")
         assertThat(authManager.isAuthenticated()).isTrue()
+
+        // Verify user is cached
+        val user = authManager.getUser()
+        assertThat(user).isNotNull()
 
         // Verify request
         val request = mockWebServer.takeRequest()
@@ -126,61 +130,63 @@ class AuthManagerTest {
     }
 
     @Test
-    fun missingTokenInResponse_returnsFalse() = runTest {
+    fun missingTokenInResponse_throwsException() = runTest {
         // Given
         mockWebServer.enqueue(
             MockResponse()
                 .setResponseCode(200)
-                .setBody("""{"wrong_field": "value"}""")
+                .setBody("""{"wrong_field": "value", "user": {"id": "123"}}""")
         )
 
         // When
         val success = authManager.exchangeInitiationToken("token")
 
-        // Then
+        // Then - Should fail because token extraction throws exception
         assertThat(success).isFalse()
         assertThat(authManager.getToken()).isNull()
     }
 
     @Test
-    fun saveToken_persistsToken() {
+    fun logout() = runTest {
         // Given
-        val token = "test-token-123"
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"token": "test-token", "user": {"id": "user-123"}}""")
+        )
+        authManager.exchangeInitiationToken("initiation-token")
+        assertThat(authManager.isAuthenticated()).isTrue()
+        assertThat(authManager.getUser()).isNotNull()
 
         // When
-        authManager.saveToken(token)
-
-        // Then
-        assertThat(authManager.getToken()).isEqualTo(token)
-        assertThat(authManager.isAuthenticated()).isTrue()
-    }
-
-    @Test
-    fun clearToken_removesToken() {
-        // Given
-        authManager.saveToken("test-token")
-        assertThat(authManager.isAuthenticated()).isTrue()
-
-        // When
-        authManager.clearToken()
+        authManager.logout()
 
         // Then
         assertThat(authManager.getToken()).isNull()
         assertThat(authManager.isAuthenticated()).isFalse()
+        assertThat(authManager.getUser()).isNull()
     }
 
     @Test
-    fun tokenPersistsAcrossInstances() {
+    fun sessionDataPersistsAcrossInstances() = runTest {
         // Given
-        val token = "persistent-token"
-        authManager.saveToken(token)
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"token": "api-token-123", "user": {"id": "user-123", "email": "test@example.com"}}""")
+                .addHeader("Set-Cookie", "better-auth.session_token=cookie123; Path=/; HttpOnly")
+        )
+
+        authManager.exchangeInitiationToken("initiation-token")
 
         // When - Create new instance
-        val newAuthManager = AuthManager(context)
+        val newAuthManager = AuthManager(context, mockWebServer.url("/").toString().trimEnd('/'))
 
-        // Then
-        assertThat(newAuthManager.getToken()).isEqualTo(token)
-        assertThat(newAuthManager.isAuthenticated()).isTrue()
+        // Then - Session should be restored from SharedPreferences
+        val user = newAuthManager.getUser()
+        val token = newAuthManager.getToken()
+        assertThat(user).isNotNull()
+        assertThat(token).isEqualTo("api-token-123")
     }
 
     @Test
@@ -190,7 +196,7 @@ class AuthManagerTest {
             MockResponse()
                 .setBodyDelay(100, TimeUnit.MILLISECONDS)
                 .setResponseCode(200)
-                .setBody("""{"token": "api-token"}""")
+                .setBody("""{"token": "api-token", "user": {"id": "123"}}""")
         )
 
         // When - Before exchange
@@ -218,7 +224,7 @@ class AuthManagerTest {
         mockWebServer.enqueue(
             MockResponse()
                 .setResponseCode(200)
-                .setBody("""{"token": "api-token"}""")
+                .setBody("""{"token": "api-token", "user": {"id": "123"}}""")
                 .addHeader("Set-Cookie", "cookie1=value1; Path=/")
                 .addHeader("Set-Cookie", "cookie2=value2; Path=/")
         )
@@ -265,5 +271,53 @@ class AuthManagerTest {
         // Then
         assertThat(success).isFalse()
         assertThat(authManager.getToken()).isNull()
+    }
+
+    @Test
+    fun concurrentSessionAccess_threadSafe() = runTest {
+        // Given
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"token": "api-token", "user": {"id": "user-123"}}""")
+        )
+
+        authManager.exchangeInitiationToken("token")
+
+        // When - Read session from multiple threads concurrently
+        val results = (1..100).map {
+            CoroutineScope(Dispatchers.IO).launch {
+                val user = authManager.getUser()
+                assertThat(user).isNotNull()
+            }
+        }
+
+        // Then - All reads should complete without exceptions
+        results.forEach { it.join() }
+    }
+
+    @Test
+    fun refreshSessionPreservesSessionData() = runTest {
+        // Given - Initial session
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"token": "initial-token", "user": {"id": "user-123"}}""")
+        )
+        authManager.exchangeInitiationToken("initiation-token")
+
+        // When - Refresh session
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"token": "refreshed-token", "user": {"id": "user-123", "email": "updated@example.com"}}""")
+                .addHeader("Set-Cookie", "better-auth.session_token=refreshed-cookie; Path=/; HttpOnly")
+        )
+        val refreshSuccess = authManager.refreshWebViewSession()
+
+        // Then - User should be updated
+        assertThat(refreshSuccess).isTrue()
+        val user = authManager.getUser()
+        assertThat(user).isNotNull()
     }
 }

@@ -6,12 +6,14 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 
 class DebugSettingsActivity : AppCompatActivity() {
     private lateinit var baseUrlEditText: EditText
     private lateinit var currentUrlText: TextView
     private lateinit var saveUrlButton: Button
     private lateinit var resetUrlButton: Button
+    private lateinit var useBundledSpaSwitch: SwitchCompat
     private lateinit var openDebugLogButton: Button
     private lateinit var closeButton: Button
     private lateinit var debugSettings: DebugSettings
@@ -26,10 +28,19 @@ class DebugSettingsActivity : AppCompatActivity() {
         currentUrlText = findViewById(R.id.current_url_text)
         saveUrlButton = findViewById(R.id.save_url_button)
         resetUrlButton = findViewById(R.id.reset_url_button)
+        useBundledSpaSwitch = findViewById(R.id.use_bundled_spa_switch)
         openDebugLogButton = findViewById(R.id.open_debug_log_button)
         closeButton = findViewById(R.id.close_button)
 
         updateCurrentUrlDisplay()
+
+        // Set initial state of bundled SPA switch
+        useBundledSpaSwitch.isChecked = debugSettings.getUseBundledSpa()
+
+        useBundledSpaSwitch.setOnCheckedChangeListener { _, isChecked ->
+            debugSettings.setUseBundledSpa(isChecked)
+            restartApp()
+        }
 
         saveUrlButton.setOnClickListener {
             val customUrl = baseUrlEditText.text.toString().trim()

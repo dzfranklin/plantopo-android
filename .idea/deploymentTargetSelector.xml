@@ -13,10 +13,10 @@
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
-      <SelectionState runConfigName="AuthManagerTest">
+      <SelectionState runConfigName="androidTest">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="Tests in 'com.plantopo.plantopo'">
+      <SelectionState runConfigName="isExchangingToken_flagSetDuringExchange()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

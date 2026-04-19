@@ -7,7 +7,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import timber.log.Timber
 
-class PlanTopoWebViewClient : WebViewClient() {
+class PlanTopoWebViewClient(
+    private val spaAssetManager: SpaAssetManager
+) : WebViewClient() {
 
     private val externalLinkHandler = ExternalLinkHandler()
 
@@ -65,5 +67,42 @@ class PlanTopoWebViewClient : WebViewClient() {
     ) {
         super.onReceivedHttpError(view, request, errorResponse)
         Timber.tag("WebView").e("HTTP error: ${errorResponse?.statusCode} for ${request?.url}")
+    }
+
+    override fun shouldInterceptRequest(
+        view: WebView?,
+        request: WebResourceRequest?
+    ): WebResourceResponse? {
+        val url = request?.url?.toString() ?: return null
+
+        // Check if we should use bundled assets
+        val debugSettings = view?.context?.let { DebugSettings.getInstance(it) }
+        if (debugSettings?.getUseBundledSpa() == false) {
+            Timber.tag("WebView").d("Bundled SPA disabled, loading from network: $url")
+            return null
+        }
+
+        // Only intercept requests to our BASE_URL
+        if (!url.startsWith(Config.BASE_URL)) {
+            return null
+        }
+
+        // Extract path from URL
+        val path = url.substring(Config.BASE_URL.length).trimStart('/')
+
+        if (path.startsWith("api/")) {
+            return null
+        }
+
+        // Try to serve from bundled assets
+        val response = spaAssetManager.serveAsset(path)
+        if (response != null) {
+            Timber.tag("WebView").d("Serving from bundled assets: $path")
+            return response
+        }
+
+        // If not found in assets, let it load from network
+        Timber.tag("WebView").d("Asset not found, loading from network: $path")
+        return null
     }
 }

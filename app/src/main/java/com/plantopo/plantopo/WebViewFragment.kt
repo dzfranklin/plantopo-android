@@ -39,11 +39,13 @@ class WebViewFragment : Fragment() {
     private var webView: WebView? = null
     private lateinit var authManager: AuthManager
     private lateinit var oauthManager: OAuthManager
+    private lateinit var spaAssetManager: SpaAssetManager
     private var currentRecordingServiceId: String? = null
     private var webViewState: Bundle? = null
     private var isReauthenticating = false
     private var reauthView: View? = null
     private var skipStateRestore = false  // Flag to skip state restore after reauth
+    private var spaInitialized = false  // Flag to track SPA initialization
 
     private val recordingViewModel: RecordingViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -82,10 +84,33 @@ class WebViewFragment : Fragment() {
         super.onCreate(savedInstanceState)
         authManager = AuthManager(requireContext())
         oauthManager = OAuthManager(requireContext())
+        spaAssetManager = SpaAssetManager.getInstance(requireContext(), authManager)
 
         // Enable WebView debugging in debug builds
         if (BuildConfig.DEBUG) {
             WebView.setWebContentsDebuggingEnabled(true)
+        }
+
+        // Initialize SPA assets and check for updates in background
+        lifecycleScope.launch {
+            spaAssetManager.initialize()
+            spaInitialized = true
+
+            // Recreate view if it was showing loading state
+            if (view != null) {
+                Timber.i("SPA initialized, recreating view")
+                parentFragmentManager.beginTransaction()
+                    .detach(this@WebViewFragment)
+                    .commit()
+                parentFragmentManager.beginTransaction()
+                    .attach(this@WebViewFragment)
+                    .commit()
+            }
+
+            // Check for updates in background
+            launch {
+                spaAssetManager.checkForUpdates()
+            }
         }
 
         // Configure CookieManager for better persistence
@@ -129,6 +154,12 @@ class WebViewFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        // Wait for SPA initialization before showing WebView
+        if (!spaInitialized) {
+            Timber.i("SPA not initialized yet, showing loading view")
+            return inflater.inflate(R.layout.fragment_loading, container, false)
+        }
+
         // If re-authentication is in progress, show reauthorizing view
         if (isReauthenticating) {
             Timber.i("Re-authentication in progress, showing reauthorizing view")
@@ -178,11 +209,11 @@ class WebViewFragment : Fragment() {
 
             // Add JavaScript interface for Android-WebView communication
             addJavascriptInterface(
-                WebAppInterface(this@WebViewFragment),
+                WebAppInterface(this@WebViewFragment, spaAssetManager),
                 "Native"
             )
 
-            webViewClient = PlanTopoWebViewClient()
+            webViewClient = PlanTopoWebViewClient(spaAssetManager)
 
             webChromeClient = object : WebChromeClient() {
                 // Intercept geolocation permission requests and auto-grant them
@@ -240,7 +271,7 @@ class WebViewFragment : Fragment() {
         super.onResume()
         // If user just completed OAuth and we don't have a WebView yet, recreate the view
         // Don't do this if we're in the middle of reauthorizing
-        if (authManager.isAuthenticated() && webView == null && !isReauthenticating) {
+        if (authManager.isAuthenticated() && webView == null && !isReauthenticating && spaInitialized) {
             Timber.i("onResume: just completed oauth, no webview yet")
             // Trigger view recreation by replacing fragment
             parentFragmentManager.beginTransaction()
@@ -290,7 +321,7 @@ class WebViewFragment : Fragment() {
 
     private fun doLogout() {
         Timber.i("Logging out")
-        authManager.clearToken()
+        authManager.logout()
 
         // Recreate the view to show login screen
         parentFragmentManager.beginTransaction()
@@ -306,6 +337,18 @@ class WebViewFragment : Fragment() {
         activity?.runOnUiThread {
             val intent = android.content.Intent(activity, DebugSettingsActivity::class.java)
             startActivity(intent)
+        }
+    }
+
+    private fun doRestart() {
+        // JavaScript bridge calls come from JavaBridge thread, switch to main thread
+        activity?.runOnUiThread {
+            Timber.i("Restarting app")
+            val intent = Intent(activity, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            }
+            startActivity(intent)
+            activity?.finish()
         }
     }
 
@@ -492,8 +535,24 @@ class WebViewFragment : Fragment() {
 
     @Suppress("unused")
     class WebAppInterface(
-        private val fragment: WebViewFragment
+        private val fragment: WebViewFragment,
+        private val spaAssetManager: SpaAssetManager
     ) {
+        init {
+            spaAssetManager.setUpdateListener { available ->
+                dispatchEvent("spaUpdateChange")
+            }
+        }
+
+        private fun dispatchEvent(name: String) {
+            fragment.activity?.runOnUiThread {
+                fragment.webView?.evaluateJavascript(
+                    "window.dispatchEvent(new CustomEvent('$name'))",
+                    null
+                )
+            }
+        }
+
         @android.webkit.JavascriptInterface
         fun logout() {
             fragment.doLogout()
@@ -522,6 +581,16 @@ class WebViewFragment : Fragment() {
         @android.webkit.JavascriptInterface
         fun openNativeDebug() {
             fragment.openDebugLog()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun spaUpdateAvailable(): Boolean {
+            return spaAssetManager.updateAvailable
+        }
+
+        @android.webkit.JavascriptInterface
+        fun restart() {
+            fragment.doRestart()
         }
     }
 

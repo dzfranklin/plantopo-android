@@ -6,25 +6,47 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 
+/**
+ * Provides access to the current session data.
+ */
+interface UserProvider {
+    fun getUser(): JsonObject?
+}
+
+/**
+ * Native session response containing token and user data.
+ */
+@Serializable
+data class NativeSessionResponse(
+    val token: String,
+    val user: JsonObject
+)
+
 class AuthManager(
     private val context: Context,
     private val baseUrl: String = Config.BASE_URL,
     httpClient: OkHttpClient? = null
-) : TokenProvider {
+) : TokenProvider, UserProvider {
     private val sharedPreferences = context.getSharedPreferences(
         "auth_prefs",
         Context.MODE_PRIVATE
     )
 
-    fun saveToken(token: String) {
-        Timber.i("Saving authentication token")
-        sharedPreferences.edit {
-            putString(KEY_SESSION_TOKEN, token)
+    private val httpClient = httpClient ?: OkHttpClient()
+    private val json = Json { ignoreUnknownKeys = true }
+
+    override fun getUser(): JsonObject? {
+        val userJson = sharedPreferences.getString(KEY_USER, null)
+        return if (userJson != null) {
+            json.decodeFromString(JsonObject.serializer(), userJson)
+        } else {
+            null
         }
     }
 
@@ -33,10 +55,11 @@ class AuthManager(
         return token
     }
 
-    fun clearToken() {
-        Timber.i("Clearing authentication token")
+    fun logout() {
+        Timber.i("Clearing authentication data")
         sharedPreferences.edit {
             remove(KEY_SESSION_TOKEN)
+            remove(KEY_USER)
         }
     }
 
@@ -44,12 +67,6 @@ class AuthManager(
         val authenticated = getToken() != null
         return authenticated
     }
-
-    @Serializable
-    private data class NativeSessionResponse(val token: String)
-
-    private val httpClient = httpClient ?: OkHttpClient()
-    private val json = Json { ignoreUnknownKeys = true }
 
     @Volatile
     private var _isExchangingToken = false
@@ -76,13 +93,8 @@ class AuthManager(
                 val responseBody = response.body.string()
 
                 if (response.isSuccessful) {
-                    // Extract API token from response body
                     val sessionResponse = json.decodeFromString<NativeSessionResponse>(responseBody)
-                    val apiToken = sessionResponse.token
-
-                    // Store the API token (not the initiation token)
-                    saveToken(apiToken)
-                    Timber.i("API token stored successfully")
+                    updateSessionFromResponse(sessionResponse)
 
                     // Extract and store session cookies for WebView
                     val cookies = response.headers("Set-Cookie")
@@ -91,7 +103,13 @@ class AuthManager(
                             val cookieManager = android.webkit.CookieManager.getInstance()
                             cookies.forEachIndexed { index, cookie ->
                                 cookieManager.setCookie(baseUrl, cookie) { success ->
-                                    Timber.d("Set cookie ${index + 1}/${cookies.size}: ${cookie.take(50)}... - Success: $success")
+                                    Timber.d(
+                                        "Set cookie ${index + 1}/${cookies.size}: ${
+                                            cookie.take(
+                                                50
+                                            )
+                                        }... - Success: $success"
+                                    )
                                 }
                             }
                             // Force write to disk after all cookies are set
@@ -134,8 +152,13 @@ class AuthManager(
                     .build()
 
                 val response = httpClient.newCall(request).execute()
+                val responseBody = response.body.string()
 
                 if (response.isSuccessful) {
+                    val sessionResponse =
+                        json.decodeFromString<NativeSessionResponse>(responseBody)
+                    updateSessionFromResponse(sessionResponse)
+
                     val cookies = response.headers("Set-Cookie")
                     if (cookies.isNotEmpty()) {
                         withContext(Dispatchers.Main) {
@@ -156,7 +179,7 @@ class AuthManager(
                     Timber.e("WebView session refresh failed: ${response.code}")
                     if (response.code == 401) {
                         Timber.e("API token appears expired")
-                        clearToken()
+                        logout()
                     }
                     false
                 }
@@ -167,7 +190,16 @@ class AuthManager(
         }
     }
 
+    private fun updateSessionFromResponse(response: NativeSessionResponse) {
+        sharedPreferences.edit {
+            putString(KEY_SESSION_TOKEN, response.token)
+            putString(KEY_USER, json.encodeToString(JsonObject.serializer(), response.user))
+        }
+        Timber.i("Updated session")
+    }
+
     companion object {
         private const val KEY_SESSION_TOKEN = "session_token"
+        private const val KEY_USER = "user"
     }
 }

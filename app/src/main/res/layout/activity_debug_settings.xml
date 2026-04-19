@@ -56,6 +56,13 @@
         android:background="#CCCCCC"
         android:layout_marginBottom="16dp" />
 
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/use_bundled_spa_switch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Use Bundled SPA (offline mode)"
+        android:layout_marginBottom="16dp" />
+
     <Button
         android:id="@+id/open_debug_log_button"
         android:layout_width="match_parent"

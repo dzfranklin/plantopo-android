@@ -23,9 +23,20 @@ class DebugSettings private constructor(context: Context) {
             .apply()
     }
 
+    fun getUseBundledSpa(): Boolean {
+        return prefs.getBoolean(KEY_USE_BUNDLED_SPA, true)
+    }
+
+    fun setUseBundledSpa(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_USE_BUNDLED_SPA, enabled)
+            .apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "debug_settings"
         private const val KEY_CUSTOM_BASE_URL = "custom_base_url"
+        private const val KEY_USE_BUNDLED_SPA = "use_bundled_spa"
 
         @Volatile
         private var instance: DebugSettings? = null
