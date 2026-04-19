@@ -7,6 +7,8 @@ class PlanTopoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        Config.initialize(this)
+
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
             Timber.plant(DebugLogBuffer.BufferingTree())

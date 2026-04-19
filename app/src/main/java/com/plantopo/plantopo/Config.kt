@@ -1,5 +1,14 @@
 package com.plantopo.plantopo
 
+import android.content.Context
+
 object Config {
-    val BASE_URL: String = BuildConfig.BASE_URL
+    private var debugSettings: DebugSettings? = null
+
+    val BASE_URL: String
+        get() = debugSettings?.getCustomBaseUrl() ?: BuildConfig.BASE_URL
+
+    fun initialize(context: Context) {
+        debugSettings = DebugSettings.getInstance(context)
+    }
 }

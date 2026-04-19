@@ -304,7 +304,7 @@ class WebViewFragment : Fragment() {
     private fun openDebugLog() {
         // JavaScript bridge calls come from JavaBridge thread, switch to main thread
         activity?.runOnUiThread {
-            val intent = android.content.Intent(activity, DebugLogActivity::class.java)
+            val intent = android.content.Intent(activity, DebugSettingsActivity::class.java)
             startActivity(intent)
         }
     }

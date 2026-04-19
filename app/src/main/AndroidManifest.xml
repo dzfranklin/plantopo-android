@@ -56,6 +56,12 @@
             android:label="Debug Logs"
             android:theme="@style/Theme.PlanTopo" />
 
+        <activity
+            android:name=".DebugSettingsActivity"
+            android:exported="false"
+            android:label="Debug Settings"
+            android:theme="@style/Theme.PlanTopo" />
+
         <!-- Recording service for GPS tracking -->
         <service
             android:name=".recording.service.RecordingService"
