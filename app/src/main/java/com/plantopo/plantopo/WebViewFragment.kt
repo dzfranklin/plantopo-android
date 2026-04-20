@@ -201,7 +201,6 @@ class WebViewFragment : Fragment() {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                databaseEnabled = true  // Enable database storage
                 cacheMode = android.webkit.WebSettings.LOAD_DEFAULT  // Use cache when available
                 userAgentString = "PlanTopoNative $userAgentString"
                 setGeolocationEnabled(true)
@@ -335,7 +334,7 @@ class WebViewFragment : Fragment() {
     private fun openDebugLog() {
         // JavaScript bridge calls come from JavaBridge thread, switch to main thread
         activity?.runOnUiThread {
-            val intent = android.content.Intent(activity, DebugSettingsActivity::class.java)
+            val intent = Intent(activity, DebugSettingsActivity::class.java)
             startActivity(intent)
         }
     }
@@ -520,8 +519,8 @@ class WebViewFragment : Fragment() {
     }
 
     private fun pushRecordTrackState(recording: Recording?) {
-        val wv = webView;
-        if (wv == null) return;
+        val wv = webView
+        if (wv == null) return
 
         val state = RecordTrackState(recording)
         val stateJson = Json.encodeToString(Json.encodeToString(state))
@@ -591,6 +590,11 @@ class WebViewFragment : Fragment() {
         @android.webkit.JavascriptInterface
         fun restart() {
             fragment.doRestart()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun version(): String {
+            return BuildConfig.VERSION_NAME
         }
     }
 
