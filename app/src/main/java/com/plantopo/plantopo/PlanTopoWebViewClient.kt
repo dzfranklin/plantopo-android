@@ -57,7 +57,8 @@ class PlanTopoWebViewClient(
         error: WebResourceError?
     ) {
         super.onReceivedError(view, request, error)
-        Timber.tag("WebView").e("WebView error: ${error?.description} (${error?.errorCode}) for ${request?.url}")
+        Timber.tag("WebView")
+            .e("WebView error: ${error?.description} (${error?.errorCode}) for ${request?.url}")
     }
 
     override fun onReceivedHttpError(
@@ -91,6 +92,11 @@ class PlanTopoWebViewClient(
         val path = url.substring(Config.BASE_URL.length).trimStart('/')
 
         if (path.startsWith("api/")) {
+            return null
+        }
+
+        // dev server routes
+        if (path.startsWith("src/") or path.startsWith("@fs/") or path.startsWith("node_modules/")) {
             return null
         }
 

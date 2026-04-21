@@ -46,6 +46,8 @@ class WebViewFragment : Fragment() {
     private var reauthView: View? = null
     private var skipStateRestore = false  // Flag to skip state restore after reauth
     private var spaInitialized = false  // Flag to track SPA initialization
+    private var pendingGeolocationCallback: android.webkit.GeolocationPermissions.Callback? = null
+    private var pendingGeolocationOrigin: String? = null
 
     private val recordingViewModel: RecordingViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -66,6 +68,22 @@ class WebViewFragment : Fragment() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.all { it.value }
+
+        // Handle geolocation permission callback if pending
+        if (pendingGeolocationCallback != null) {
+            if (allGranted) {
+                Timber.i("Location permissions granted for geolocation")
+                pendingGeolocationCallback?.invoke(pendingGeolocationOrigin, true, false)
+            } else {
+                Timber.w("Location permissions denied for geolocation")
+                pendingGeolocationCallback?.invoke(pendingGeolocationOrigin, false, false)
+            }
+            pendingGeolocationCallback = null
+            pendingGeolocationOrigin = null
+            return@registerForActivityResult
+        }
+
+        // Handle recording permission callback
         if (allGranted) {
             Timber.i("All permissions granted, starting recording")
             recordingViewModel.startRecording()
@@ -221,9 +239,20 @@ class WebViewFragment : Fragment() {
                     origin: String,
                     callback: android.webkit.GeolocationPermissions.Callback
                 ) {
-                    // Auto-grant permission to the WebView without showing a popup
-                    // The native app already handles location permissions
-                    callback.invoke(origin, true, false)
+                    Timber.i("Geolocation permission requested from $origin")
+
+                    // Check if we have location permissions
+                    if (PermissionHandler.hasAllRequiredPermissions(requireContext())) {
+                        // Auto-grant permission to the WebView
+                        Timber.i("Location permissions already granted, allowing geolocation")
+                        callback.invoke(origin, true, false)
+                    } else {
+                        // Request permissions from user first
+                        Timber.i("Requesting location permissions for geolocation")
+                        pendingGeolocationCallback = callback
+                        pendingGeolocationOrigin = origin
+                        permissionLauncher.launch(PermissionHandler.getRequiredPermissions())
+                    }
                 }
 
                 override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
